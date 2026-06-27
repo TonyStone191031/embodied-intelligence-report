@@ -1,0 +1,18 @@
+flowchart LR
+    A["视觉观测<br/>image / depth / point cloud"] --> D["多模态编码与融合"]
+    B["机器人状态<br/>joint / pose / force / history"] --> D
+    C["语言任务<br/>instruction / subgoal / context"] --> D
+    D --> E["VLA主干模型<br/>Transformer / Diffusion / Hybrid"]
+    E --> F["动作表示层"]
+    F --> F1["连续动作"]
+    F --> F2["离散token"]
+    F --> F3["action chunk"]
+    F --> F4["技能/程序化原语"]
+    F1 --> G["低层控制与执行"]
+    F2 --> G
+    F3 --> G
+    F4 --> H["技能库 / 控制器"]
+    H --> G
+    G --> I["环境反馈"]
+    I --> A
+    I --> B
