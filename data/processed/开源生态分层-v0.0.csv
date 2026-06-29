@@ -1,0 +1,5 @@
+layer,focus,typical_assets,key_questions,examples
+data,采集与标准化,"遥操作日志,时间同步工具,数据格式,回放工具","数据是否可复用; 时间轴是否对齐; 失败样本是否保留","LeRobot; Open X-Embodiment"
+model,表示与策略,"视觉 backbone, policy, VLA, world model","输入输出接口是什么; 动作表示是什么; 是否支持多任务","OpenVLA; Diffusion Policy; ACT"
+environment,仿真与评测,"仿真器,benchmark,任务脚本,评测协议","环境支持什么任务; 指标奖励什么; 是否可复现","Isaac Sim; Habitat; MuJoCo; Gazebo"
+deployment,运行时与运维,"边缘推理,ROS/中间件,监控,告警,回放","模型能否稳定跑在真实机器人上; 是否支持诊断与回退","ROS 2; edge runtime; deployment monitoring stack"

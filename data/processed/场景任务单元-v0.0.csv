@@ -1,0 +1,7 @@
+scenario,task_unit,structure_level,error_tolerance,maintenance_difficulty,regulation_intensity,roi_visibility,updated_at,notes
+制造业,上下料/工位协作/质检,high,medium,medium,medium,high,2026-06-30,源自 23 章当前对照表
+仓储物流,分拣/搬运/补货/拣选,high,medium,medium,medium,high,2026-06-30,适合作为商业化先行入口
+巡检,楼宇/电力/园区巡检,medium_high,medium,medium,medium,medium_high,2026-06-30,对自主与远程接管都有需求
+农业,采摘/喷洒/巡田,medium,medium,high,medium,medium,2026-06-30,受环境变化和季节性影响大
+家庭服务,收纳/清洁/照护辅助,low,low,high,medium_high,low_to_medium,2026-06-30,开放性高且责任复杂
+医疗康复,辅助操作/康复训练/转运,medium,low,high,high,medium,2026-06-30,监管与责任约束强
