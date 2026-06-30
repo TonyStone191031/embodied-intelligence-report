@@ -1,0 +1,9 @@
+field,meaning,why_it_matters
+mainline,所属主线,用于判断工作是延续哪条研究谱系
+io_interface,输入输出接口,决定是否与其他工作真正可比
+data_source,数据来源,决定结论能说明什么以及偏差来自哪里
+training_paradigm,训练范式,用于区分行为克隆/扩散/flow matching/world model等
+generalization_target,泛化目标,防止把不同强度的泛化混为一谈
+deployment_assumption,部署假设,判断工作更接近演示还是可交付系统
+open_source_level,开源程度,评估其对社区扩散与复现的影响
+unresolved_problem,未解决问题,帮助后续版本跟踪真正遗留的瓶颈

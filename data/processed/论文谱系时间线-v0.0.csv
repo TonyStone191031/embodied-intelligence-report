@@ -1,0 +1,12 @@
+year,paper,route,layer,role,chapter,source_note
+2022,SayCan,language_planning,planning,把语言规划与技能可供性结合,12,章节中已引用
+2022,Code as Policies,programmatic_planning,planning,把语言输出约束到可执行程序接口,12,章节中已引用
+2022,RT-1,vla_foundation,model,早期机器人 transformer 路线代表,11,章节中已引用
+2023,DreamerV3,world_model,model,世界模型与潜空间规划路线的重要代表,10,后续应继续补章节交叉引用
+2023,PaLM-E,embodied_multimodal,model,把多模态基础模型叙事推进到具身接口,21,章节中已引用
+2023,Diffusion Policy,generative_policy,model,把生成式动作建模推成机器人策略主线之一,11,后续应继续补章节交叉引用
+2023,RT-2,vla_foundation,model,把视觉语言知识继续压向机器人动作接口,11,章节中已引用
+2023,Voyager,agent_memory,planning,强调技能积累与外部记忆,12,章节中已引用
+2024,V-JEPA,predictive_representation,model,把抽象预测和 JEPA 路线推向主流视野,10,后续应继续补章节交叉引用
+2024,OpenVLA,open_vla,model,开源 VLA 路线代表,11,章节中已引用
+2025,GR00T N1,foundation_platform,platform,平台型基础模型路线代表,21,章节中已引用
