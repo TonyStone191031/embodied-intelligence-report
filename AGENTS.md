@@ -3,14 +3,21 @@
 ## Read First
 
 1. `docs/planning/项目工作规范.md`
-2. `docs/planning/具身智能报告-V0.0-详细大纲.md`
+2. `docs/planning/README.md`
+3. `docs/planning/current/具身智能报告-当前详细大纲.md`
+4. `docs/planning/current/当前版本修订计划.md`
+5. `docs/planning/current/当前工作清单.md`
 
 ## Workflow
 
-1. Do not write or rewrite report正文 before outline work.
-2. First create or update an outline in `docs/planning/`.
-3. Wait for explicit user approval of the outline.
-4. Only then draft report正文.
+1. Before any report正文 drafting or revision, read every file listed in `Read First`.
+2. In the first progress update of a new正文 batch, explicitly state that the pre-read has been completed.
+3. Do not write or rewrite report正文 before outline work.
+4. For structural changes or new正文 drafting, first create or update the active outline in `docs/planning/current/`.
+5. Wait for explicit user approval of the outline before structural drafting.
+6. For non-structural maintenance such as wording cleanup, citation normalization, metadata fixes, or export polish, first update `docs/planning/current/当前版本修订计划.md`.
+7. For any new正文 batch, also update `docs/planning/current/当前工作清单.md` with task scope, target chapters, and status before drafting.
+8. Only then draft or revise report正文.
 
 ## Report Files
 

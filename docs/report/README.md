@@ -27,7 +27,7 @@ docs/report/
 ## 关键文件
 
 - 当前版本总入口：
-  [00-具身智能行业和技术发展调研报告-v0.0](D:/Projects/embodied-intelligence-report/docs/report/current/00-具身智能行业和技术发展调研报告-v0.0.md)
+  [00-具身智能行业和技术发展调研报告-v0.1](D:/Projects/embodied-intelligence-report/docs/report/current/00-具身智能行业和技术发展调研报告-v0.1.md)
 - 项目工作规范：
   [项目工作规范](D:/Projects/embodied-intelligence-report/docs/planning/项目工作规范.md)
 - 更新日志：
