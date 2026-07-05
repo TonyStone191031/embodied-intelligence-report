@@ -11,9 +11,12 @@ from docx.shared import RGBColor
 from docx.shared import Inches, Pt
 
 from common import (
+    IMAGE_RE,
+    MARKDOWN_LINK_RE,
     WINDOWS_CONSOLAS,
     build_config,
     choose_writable_output_path,
+    is_probably_local_target,
     normalize_links,
     parse_args_with_version,
     read_text,
@@ -22,7 +25,9 @@ from common import (
 from docx_math_upgrade import (
     append_formula_omml,
     append_matrix_formula,
+    build_formula_omml,
     is_matrix_formula,
+    latex_to_word_linear,
     normalize_formula_block,
     register_linear_formula,
     upgrade_docx_linear_formulas,
@@ -34,6 +39,9 @@ TABLE_DIVIDER_RE = re.compile(r"^\|\s*---")
 LOCAL_TABLE_LINK_RE = re.compile(r"^见[:：]?\s*\[(?P<label>[^\]]+)\]\((?P<target>[^)]+)\)[。.]?$")
 SOURCE_LINE_RE = re.compile(r"^源文件：`(?P<target>[^`]+)`")
 FRONT_MATTER_H2 = {"版本说明", "结构说明", "章节索引", "配套文件", "入口文件职责补充说明"}
+
+
+INLINE_TOKEN_RE = re.compile(r"\\\((?P<math>.+?)\\\)|`(?P<code>[^`]+)`")
 
 
 def formula_font_name() -> str:
@@ -94,6 +102,90 @@ def add_formula_paragraph(document: Document, block: list[str], font_name: str, 
     apply_run_font(run, font_name, size=12)
 
 
+def sanitize_inline_images(text: str) -> str:
+    def repl(match: re.Match[str]) -> str:
+        alt = match.group(1).strip()
+        target = match.group(2).strip()
+        label = alt or Path(target).name
+        return f"[鍥剧墖: {label}]"
+
+    return IMAGE_RE.sub(repl, text)
+
+
+def looks_like_math_code(text: str) -> bool:
+    value = text.strip()
+    if not value:
+        return False
+    if any(token in value for token in ("://", ".md", ".mmd", ".csv", ".py", "docs/", "assets/", "research/", "data/", "output/")):
+        return False
+    if re.search(r"\\[A-Za-z]+", value):
+        return True
+    if re.fullmatch(r"[A-Za-zΑ-Ωα-ω]", value):
+        return True
+    if re.fullmatch(r"[A-Za-zΑ-Ωα-ω](?:_[A-Za-z0-9{}+\-]+)?(?:\^[A-Za-z0-9{}*+\-]+)?", value):
+        return True
+    if any(char in value for char in ("_", "^", "{", "}")):
+        return True
+    if re.search(r"\b(?:SE|SO)\(\d+\)", value):
+        return True
+    if re.fullmatch(r"[A-Za-zΑ-Ωα-ω][A-Za-z0-9]{0,2}\([^()]+\)", value):
+        return True
+    if re.search(r"[A-Za-zΑ-Ωα-ω]\([^)]+\)", value) and any(op in value for op in ("=", "+", "-", "/", "|")):
+        return True
+    return False
+
+
+def iter_inline_fragments(text: str):
+    cursor = 0
+    for match in INLINE_TOKEN_RE.finditer(text):
+        if match.start() > cursor:
+            yield ("text", text[cursor:match.start()])
+        if match.group("math") is not None:
+            yield ("math", match.group("math").strip())
+        else:
+            content = match.group("code")
+            yield ("math" if looks_like_math_code(content) else "code", content)
+        cursor = match.end()
+    if cursor < len(text):
+        yield ("text", text[cursor:])
+
+
+def iter_markdown_fragments(text: str):
+    sanitized = sanitize_inline_images(text)
+    cursor = 0
+    for match in MARKDOWN_LINK_RE.finditer(sanitized):
+        if match.start() > cursor:
+            yield from iter_inline_fragments(sanitized[cursor:match.start()])
+        label = match.group(1).strip()
+        target = match.group(2).strip()
+        if is_probably_local_target(target):
+            yield from iter_inline_fragments(label)
+        else:
+            yield from iter_inline_fragments(label)
+        cursor = match.end()
+    if cursor < len(sanitized):
+        yield from iter_inline_fragments(sanitized[cursor:])
+
+
+def append_markdown_inlines(paragraph, text: str, font_name: str, mono_font: str, size: float) -> None:
+    for kind, content in iter_markdown_fragments(text):
+        if not content:
+            continue
+        if kind == "text":
+            run = paragraph.add_run(content)
+            apply_run_font(run, font_name, size=size)
+            continue
+        if kind == "code":
+            run = paragraph.add_run(content)
+            apply_run_font(run, mono_font, size=size)
+            continue
+        try:
+            paragraph._element.append(build_formula_omml(content))
+        except Exception:
+            run = paragraph.add_run(latex_to_word_linear(content))
+            apply_run_font(run, mono_font, size=size)
+
+
 def add_front_matter_heading(document: Document, text: str, font_name: str) -> None:
     paragraph = document.add_paragraph()
     paragraph.paragraph_format.space_before = Pt(10)
@@ -118,6 +210,16 @@ def add_table(document: Document, rows: list[list[str]], font_name: str) -> None
                     for run in p.runs:
                         run.bold = True
     document.add_paragraph("")
+
+
+def add_manual_numbered_item(document: Document, index: int, text: str, font_name: str, mono_font: str) -> None:
+    paragraph = document.add_paragraph()
+    paragraph.paragraph_format.left_indent = Inches(0.35)
+    paragraph.paragraph_format.first_line_indent = Inches(-0.22)
+    paragraph.paragraph_format.space_after = Pt(4)
+    paragraph.paragraph_format.line_spacing = 1.3
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    append_markdown_inlines(paragraph, f"{index}. {text}", font_name, mono_font, 11.5)
 
 
 def parse_table(lines: list[str], start: int) -> tuple[list[list[str]], int]:
@@ -330,27 +432,33 @@ def render_markdown_to_docx(markdown_text: str, output_path: Path, config) -> No
             continue
 
         if re.match(r"^\d+\.\s+", stripped):
-            p = document.add_paragraph(normalize_links(re.sub(r"^\d+\.\s+", "", stripped)), style="List Number")
-            apply_font_to_paragraph(p, font_name, 11.5)
-            i += 1
+            list_items: list[str] = []
+            while i < len(lines):
+                numbered = lines[i].strip()
+                if not re.match(r"^\d+\.\s+", numbered):
+                    break
+                list_items.append(re.sub(r"^\d+\.\s+", "", numbered))
+                i += 1
+            for item_index, item_text in enumerate(list_items, 1):
+                add_manual_numbered_item(document, item_index, item_text, font_name, mono_font)
             continue
 
         if stripped.startswith("- "):
-            p = document.add_paragraph(normalize_links(stripped[2:].strip()), style="List Bullet")
-            apply_font_to_paragraph(p, font_name, 11.5)
+            p = document.add_paragraph(style="List Bullet")
+            append_markdown_inlines(p, stripped[2:].strip(), font_name, mono_font, 11.5)
             i += 1
             continue
 
         if stripped.startswith("> "):
             p = document.add_paragraph()
             p.paragraph_format.left_indent = Inches(0.3)
-            run = p.add_run(normalize_links(stripped[2:].strip()))
-            apply_run_font(run, font_name, size=11.5)
-            run.italic = True
+            append_markdown_inlines(p, stripped[2:].strip(), font_name, mono_font, 11.5)
+            for run in p.runs:
+                run.italic = True
             i += 1
             continue
 
-        paragraph_lines = [normalize_links(stripped)]
+        paragraph_lines = [stripped]
         i += 1
         while i < len(lines):
             peek = lines[i].strip()
@@ -369,15 +477,14 @@ def render_markdown_to_docx(markdown_text: str, output_path: Path, config) -> No
                 or LOCAL_TABLE_LINK_RE.match(peek)
             ):
                 break
-            paragraph_lines.append(normalize_links(peek))
+            paragraph_lines.append(peek)
             i += 1
 
-        paragraph = document.add_paragraph(" ".join(paragraph_lines))
+        paragraph = document.add_paragraph()
         paragraph.paragraph_format.space_after = Pt(6)
         paragraph.paragraph_format.line_spacing = 1.35
         paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-        for run in paragraph.runs:
-            apply_run_font(run, font_name, size=11.5)
+        append_markdown_inlines(paragraph, " ".join(paragraph_lines), font_name, mono_font, 11.5)
 
     document.save(output_path)
     upgrade_docx_linear_formulas(output_path, formulas)

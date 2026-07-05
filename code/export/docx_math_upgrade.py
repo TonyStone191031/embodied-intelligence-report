@@ -158,11 +158,14 @@ def append_matrix_formula(paragraph, formula_text: str) -> None:
     paragraph._element.append(deepcopy(omml))
 
 
-def append_formula_omml(paragraph, formula_text: str) -> None:
+def build_formula_omml(formula_text: str):
     if is_matrix_formula(formula_text):
-        append_matrix_formula(paragraph, formula_text)
-        return
-    omml = build_linear_omml(latex_to_word_linear(formula_text))
+        return build_matrix_omml(formula_text)
+    return build_linear_omml(latex_to_word_linear(formula_text))
+
+
+def append_formula_omml(paragraph, formula_text: str) -> None:
+    omml = build_formula_omml(formula_text)
     paragraph._element.append(deepcopy(omml))
 
 

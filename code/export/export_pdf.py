@@ -407,9 +407,15 @@ def render_markdown_to_pdf(markdown_text: str, output_path, config) -> None:
             continue
 
         if re.match(r"^\d+\.\s+", stripped):
-            text = re.sub(r"^\d+\.\s+", "", stripped)
-            story.append(Paragraph(escape_pdf_text(normalize_links(text)), styles["ReportBody"]))
-            i += 1
+            list_items: list[str] = []
+            while i < len(lines):
+                numbered = lines[i].strip()
+                if not re.match(r"^\d+\.\s+", numbered):
+                    break
+                list_items.append(re.sub(r"^\d+\.\s+", "", numbered))
+                i += 1
+            for item_index, item_text in enumerate(list_items, 1):
+                story.append(Paragraph(escape_pdf_text(f"{item_index}. " + normalize_links(item_text)), styles["ReportBody"]))
             continue
 
         if stripped.startswith("- "):

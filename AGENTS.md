@@ -59,6 +59,7 @@
 6. Treat Word (`.docx`) as the primary readable release artifact by default.
 7. Treat PDF as a secondary derivative artifact for distribution/printing; if Word and PDF quality diverge, fix Markdown/assets/export scripts and stabilize Word first.
 8. Prefer generating PDF from the exported Word artifact when Microsoft Word automation is available; use direct script rendering only as a fallback.
+9. Keep the report export entrypoints consolidated under `code/export/`; future `vX.X` versions should reuse the same scripts via `run_export.py --version vX.X --source current|frozen` instead of creating version-specific exporter copies.
 
 ## Quality Gates
 
