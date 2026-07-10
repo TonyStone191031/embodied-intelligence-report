@@ -618,6 +618,6 @@ flowchart LR
 如果新增工作主要改变的是动作头而不是高层语言接口，则应优先并行查看 [生成式动作与策略论文清单](D:/Projects/embodied-intelligence-report/research/papers/生成式动作与策略-论文清单-v0.0.md)，避免把动作建模变化误写成单纯 backbone 升级。
 ## 表 11-1 RT-1 / RT-2 / OpenVLA / GR00T 路线对照表
 
-见：[11-VLA路线对照表](tables/11-VLA路线对照表.md)
+见：[11-VLA路线对照表](docs/report/versions/v0.1/tables/11-VLA路线对照表.md)
 
 这张表的作用不是替代正文判断，而是把路线比较固定到同一组字段里，避免后续增量更新时只追加模型名和宣传叙事。
