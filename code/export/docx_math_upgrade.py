@@ -126,6 +126,10 @@ def is_matrix_formula(formula_text: str) -> bool:
     return r"\begin{bmatrix}" in formula_text or r"\begin{matrix}" in formula_text
 
 
+def is_cases_formula(formula_text: str) -> bool:
+    return r"\begin{cases}" in formula_text and r"\end{cases}" in formula_text
+
+
 def register_linear_formula(formulas: list[LinearFormulaSpec], formula_text: str) -> str:
     placeholder = f"[[FORMULA_{len(formulas) + 1:04d}]]"
     formulas.append(
@@ -159,6 +163,8 @@ def append_matrix_formula(paragraph, formula_text: str) -> None:
 
 
 def build_formula_omml(formula_text: str):
+    if is_cases_formula(formula_text):
+        return build_cases_omml(formula_text)
     if is_matrix_formula(formula_text):
         return build_matrix_omml(formula_text)
     return build_linear_omml(latex_to_word_linear(formula_text))
@@ -218,6 +224,21 @@ def upgrade_docx_linear_formulas(docx_path: Path, formulas: list[LinearFormulaSp
 
 def build_matrix_omml(formula_text: str):
     prefix, rows, suffix, open_bracket, close_bracket = _parse_matrix_formula(formula_text)
+    return _build_table_omml(prefix, rows, suffix, open_bracket, close_bracket)
+
+
+def build_cases_omml(formula_text: str):
+    prefix, rows = _parse_cases_formula(formula_text)
+    return _build_table_omml(prefix, rows, "", "{", "")
+
+
+def _build_table_omml(
+    prefix: str,
+    rows: list[list[str]],
+    suffix: str,
+    open_bracket: str,
+    close_bracket: str,
+):
     math = etree.Element(f"{{{MATHML_NS}}}math", nsmap={None: MATHML_NS})
     row = etree.SubElement(math, f"{{{MATHML_NS}}}mrow")
     _append_mathml_tokens(row, prefix)
@@ -295,20 +316,28 @@ def _parse_matrix_formula(formula_text: str) -> tuple[str, list[list[str]], str,
     return prefix.strip(), rows, suffix.strip(), open_bracket, close_bracket
 
 
-def _append_mathml_tokens(parent, latex_text: str) -> None:
-    text = latex_to_word_linear(latex_text)
-    tokens = re.findall(r"[A-Za-z]+|[0-9]+|[\u0370-\u03ff]+|[^\s]", text)
-    for token in tokens:
-        if not token:
+def _parse_cases_formula(formula_text: str) -> tuple[str, list[list[str]]]:
+    begin = r"\begin{cases}"
+    end = r"\end{cases}"
+    prefix, remainder = formula_text.split(begin, 1)
+    body, _suffix = remainder.split(end, 1)
+    rows = []
+    for raw_row in re.split(r"\\\\", body):
+        stripped = raw_row.strip()
+        if not stripped:
             continue
-        if re.fullmatch(r"[0-9]+", token):
-            tag = "mn"
-        elif re.fullmatch(r"[A-Za-z\u0370-\u03ff]+", token):
-            tag = "mi"
-        else:
-            tag = "mo"
-        element = etree.SubElement(parent, f"{{{MATHML_NS}}}{tag}")
-        element.text = token
+        rows.append([cell.strip() for cell in stripped.split("&")])
+    if not rows:
+        raise ValueError("Cases body is empty.")
+    return prefix.strip(), rows
+
+
+def _append_mathml_tokens(parent, latex_text: str) -> None:
+    # Use the same parser as linear formulas so matrix/cases prefixes and
+    # cells retain real subscripts, superscripts, fractions, and grouping.
+    parsed = _LinearMathParser(latex_to_word_linear(latex_text)).parse_sequence()
+    for child in list(parsed):
+        parent.append(child)
 
 
 class _LinearMathParser:
@@ -523,8 +552,8 @@ def _convert_latex_fragment(text: str) -> str:
                 pieces.append(_apply_accent(_convert_latex_fragment(token), ACCENT_COMMANDS[command]))
                 continue
             if command == "frac":
-                numerator, cursor = _read_required_group(text, next_index)
-                denominator, index = _read_required_group(text, cursor)
+                numerator, cursor = _read_fraction_argument(text, next_index)
+                denominator, index = _read_fraction_argument(text, cursor)
                 pieces.append(f"({_convert_latex_fragment(numerator)})/({_convert_latex_fragment(denominator)})")
                 continue
             if command == "sqrt":
@@ -625,6 +654,22 @@ def _read_required_group(text: str, index: int, allow_optional_brackets: bool = 
     if cursor >= len(text) or text[cursor] != "{":
         raise ValueError("Expected braced group after LaTeX command.")
     return _read_group(text, cursor)
+
+
+def _read_fraction_argument(text: str, index: int) -> tuple[str, int]:
+    """Read a normal LaTeX group or one self-contained command used without braces."""
+    cursor = _skip_spaces(text, index)
+    if cursor >= len(text):
+        raise ValueError("Expected a numerator or denominator after LaTeX fraction command.")
+    if text[cursor] == "{":
+        return _read_group(text, cursor)
+    if text[cursor] == "\\":
+        command, next_cursor = _read_command(text, cursor + 1)
+        if command in GROUP_TEXT_COMMANDS:
+            group, end_cursor = _read_required_group(text, next_cursor)
+            return f"\\{command}{{{group}}}", end_cursor
+        return "\\" + command, next_cursor
+    return text[cursor], cursor + 1
 
 
 def _read_token_for_accent(text: str, index: int) -> tuple[str, int]:

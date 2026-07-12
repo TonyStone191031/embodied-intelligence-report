@@ -18,9 +18,11 @@ from reportlab.platypus import PageBreak, Paragraph, Preformatted, SimpleDocTemp
 
 from common import (
     WINDOWS_CONSOLAS,
+    WINDOWS_SEGOE_SYMBOL,
     WINDOWS_SIMFANG,
     build_config,
     choose_writable_output_path,
+    is_formula_like_block,
     normalize_links,
     parse_args_with_version,
     read_text,
@@ -35,9 +37,10 @@ SOURCE_LINE_RE = re.compile(r"^源文件：`(?P<target>[^`]+)`")
 FRONT_MATTER_H2 = {"版本说明", "结构说明", "章节索引", "配套文件", "入口文件职责补充说明"}
 
 
-def register_fonts() -> tuple[str, str]:
+def register_fonts() -> tuple[str, str, str]:
     font_name = "Helvetica"
     mono_font = "Courier"
+    formula_font = mono_font
     if WINDOWS_SIMFANG.exists():
         font_name = "SimFang"
         if font_name not in pdfmetrics.getRegisteredFontNames():
@@ -46,10 +49,14 @@ def register_fonts() -> tuple[str, str]:
         mono_font = "Consolas"
         if mono_font not in pdfmetrics.getRegisteredFontNames():
             pdfmetrics.registerFont(TTFont(mono_font, str(WINDOWS_CONSOLAS)))
-    return font_name, mono_font
+    if WINDOWS_SEGOE_SYMBOL.exists() and formula_font == "Courier":
+        formula_font = "SegoeUISymbol"
+        if formula_font not in pdfmetrics.getRegisteredFontNames():
+            pdfmetrics.registerFont(TTFont(formula_font, str(WINDOWS_SEGOE_SYMBOL)))
+    return font_name, mono_font, formula_font
 
 
-def make_styles(font_name: str, mono_font: str):
+def make_styles(font_name: str, mono_font: str, formula_font: str):
     styles = getSampleStyleSheet()
     styles.add(
         ParagraphStyle(
@@ -119,11 +126,21 @@ def make_styles(font_name: str, mono_font: str):
         ParagraphStyle(
             name="ReportFormula",
             parent=styles["Code"],
-            fontName=mono_font,
+            fontName=formula_font,
             fontSize=10.6,
             leading=14,
             alignment=TA_CENTER,
             spaceAfter=6,
+        )
+    )
+    styles.add(
+        ParagraphStyle(
+            name="ReportCodeCjk",
+            parent=styles["Code"],
+            fontName=font_name,
+            fontSize=9.3,
+            leading=13,
+            alignment=TA_LEFT,
         )
     )
     styles.add(
@@ -273,8 +290,8 @@ def add_table(story: list, rows: list[list[str]], font_name: str, styles, availa
 
 
 def render_markdown_to_pdf(markdown_text: str, output_path, config) -> None:
-    font_name, mono_font = register_fonts()
-    styles = make_styles(font_name, mono_font)
+    font_name, mono_font, formula_font = register_fonts()
+    styles = make_styles(font_name, mono_font, formula_font)
     doc = SimpleDocTemplate(
         str(output_path),
         pagesize=A4,
@@ -295,6 +312,10 @@ def render_markdown_to_pdf(markdown_text: str, output_path, config) -> None:
     i = 0
     in_front_matter = True
 
+    def code_style_name(lines: list[str]) -> str:
+        code_text = "\n".join(lines)
+        return "ReportCodeCjk" if re.search(r"[\u3400-\u9fff]", code_text) else "ReportCode"
+
     def footer(canvas, _doc):
         canvas.saveState()
         canvas.setFont(font_name, 8)
@@ -306,12 +327,12 @@ def render_markdown_to_pdf(markdown_text: str, output_path, config) -> None:
 
         if stripped.startswith("```"):
             if in_code:
-                if code_kind == "math":
+                if code_kind == "math" or is_formula_like_block("\n".join(code_lines)):
                     story.append(Preformatted("\n".join(render_formula_to_lines("\n".join(code_lines))), styles["ReportFormula"]))
                 elif code_kind == "mermaid":
                     pass
                 else:
-                    story.append(Preformatted("\n".join(code_lines), styles["ReportCode"]))
+                    story.append(Preformatted("\n".join(code_lines), styles[code_style_name(code_lines)]))
                 story.append(Spacer(1, 3 * mm))
                 code_lines = []
                 in_code = False

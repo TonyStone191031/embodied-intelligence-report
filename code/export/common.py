@@ -13,12 +13,16 @@ REPORT_ROOT = ROOT / "docs" / "report"
 OUTPUT_ROOT = ROOT / "output" / "exports"
 WINDOWS_SIMFANG = Path("C:/Windows/Fonts/simfang.ttf")
 WINDOWS_CONSOLAS = Path("C:/Windows/Fonts/consola.ttf")
+WINDOWS_SEGOE_SYMBOL = Path("C:/Windows/Fonts/seguisym.ttf")
 
 CHAPTER_RE = re.compile(r"^(?P<num>\d{2})-(?P<title>.+)\.md$")
 MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
 INLINE_MATH_RE = re.compile(r"\\\((.+?)\\\)")
 INLINE_CODE_RE = re.compile(r"`([^`]+)`")
+FORMULA_BLOCK_COMMAND_RE = re.compile(
+    r"\\(?:begin|end|frac|sqrt|mathbb|mathcal|mathbf|mathrm|operatorname|argmax|argmin|pi|theta|tau|lambda|sigma|sum|min|max)\b"
+)
 
 SUBSCRIPT_MAP = {
     "0": "₀",
@@ -150,7 +154,7 @@ def list_support_files(source_dir: Path, subdir: str) -> list[Path]:
 
 
 def read_text(path: Path) -> str:
-    return path.read_text(encoding="utf-8")
+    return path.read_text(encoding="utf-8-sig")
 
 
 def write_text(path: Path, content: str) -> None:
@@ -203,7 +207,7 @@ def resolve_repo_target(target: str) -> Path | None:
 
 
 def _subscript_or_literal(token: str) -> str:
-    if token and all(char in SUBSCRIPT_MAP for char in token):
+    if token and token.isdigit() and all(char in SUBSCRIPT_MAP for char in token):
         return "".join(SUBSCRIPT_MAP[char] for char in token)
     return "_(" + token + ")"
 
@@ -289,6 +293,10 @@ def latex_to_readable(text: str) -> str:
         if line:
             lines.append(line)
     return "\n".join(lines).strip()
+
+
+def is_formula_like_block(text: str) -> bool:
+    return bool(FORMULA_BLOCK_COMMAND_RE.search(text))
 
 
 def normalize_inline_math(text: str) -> str:

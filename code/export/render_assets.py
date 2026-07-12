@@ -7,6 +7,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 from common import WINDOWS_CONSOLAS, WINDOWS_SIMFANG, ensure_output_dir, latex_to_readable, read_text
+from docx_math_upgrade import latex_to_word_linear
 
 
 EDGE_RE = re.compile(r"([A-Za-z0-9_]+)(?:\s*--\s*([^>-]+)\s*--)?\s*-->\s*([A-Za-z0-9_]+)")
@@ -25,6 +26,13 @@ def load_formula_font(size: int) -> ImageFont.FreeTypeFont:
     if WINDOWS_SIMFANG.exists():
         return ImageFont.truetype(str(WINDOWS_SIMFANG), size=size)
     return ImageFont.load_default()
+
+
+def _formula_text_line(text: str) -> str:
+    try:
+        return latex_to_word_linear(text).strip()
+    except ValueError:
+        return latex_to_readable(text).strip()
 
 
 def wrap_node_text(text: str) -> str:
@@ -236,12 +244,12 @@ def _normalize_matrix_block(text: str) -> str:
     if not matrix_match:
         return text
 
-    prefix = latex_to_readable(matrix_match.group("prefix")).strip()
-    suffix = latex_to_readable(matrix_match.group("suffix")).strip()
+    prefix = _formula_text_line(matrix_match.group("prefix"))
+    suffix = _formula_text_line(matrix_match.group("suffix"))
     body = matrix_match.group("body")
     rows = []
     for raw_row in body.split(r"\\"):
-        cells = [latex_to_readable(cell).strip() for cell in raw_row.split("&")]
+        cells = [_formula_text_line(cell) for cell in raw_row.split("&")]
         if any(cells):
             rows.append(cells)
 
@@ -265,9 +273,45 @@ def _normalize_matrix_block(text: str) -> str:
     return "\n".join(matrix_lines)
 
 
+def _normalize_cases_block(text: str) -> str:
+    cases_match = re.search(
+        r"(?P<prefix>.*?)\\begin\{cases\}(?P<body>.*?)\\end\{cases\}(?P<suffix>.*)",
+        text,
+        flags=re.DOTALL,
+    )
+    if not cases_match:
+        return text
+
+    prefix = _formula_text_line(cases_match.group("prefix"))
+    suffix = _formula_text_line(cases_match.group("suffix"))
+    rows = []
+    for raw_row in re.split(r"\\\\", cases_match.group("body")):
+        cells = [_formula_text_line(cell) for cell in raw_row.split("&")]
+        if any(cells):
+            rows.append(cells)
+    if not rows:
+        return text
+
+    lines = [prefix + " =" if prefix and "=" not in prefix else prefix]
+    lines.append("{")
+    for row in rows:
+        value = " ".join(cell for cell in row if cell)
+        lines.append("  " + value)
+    lines.append("}" + (" " + suffix if suffix else ""))
+    return "\n".join(lines)
+
+
 def render_formula_to_lines(formula_block: str) -> list[str]:
-    text = _normalize_matrix_block(formula_block.strip())
-    lines = [latex_to_readable(line) for line in text.splitlines() if line.strip()]
+    text = formula_block.strip()
+    text = _normalize_cases_block(text)
+    text = _normalize_matrix_block(text)
+    lines = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        converted = _formula_text_line(line)
+        if converted:
+            lines.append(converted)
     return lines or [latex_to_readable(formula_block)]
 
 

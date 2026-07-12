@@ -1,0 +1,66 @@
+\usepackage{geometry}
+\geometry{a4paper, left=28mm, right=28mm, top=25mm, bottom=25mm, headheight=15pt}
+
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{xltabular}
+\usepackage{adjustbox}
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{caption}
+\usepackage{newunicodechar}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage[backend=biber,style=authoryear]{biblatex}
+\addbibresource{references/references.bib}
+\AtBeginBibliography{\raggedright}
+
+\setCJKmainfont{FangSong}[AutoFakeBold=0.2,AutoFakeSlant=0.15]
+\setCJKsansfont{SimHei}
+\setCJKmonofont{FangSong}
+\setmainfont{FangSong}[AutoFakeBold=0.2,AutoFakeSlant=0.15]
+\setsansfont{SimHei}
+\setmonofont{FangSong}
+\newunicodechar{•}{\ensuremath{\bullet}}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  urlcolor=blue,
+  citecolor=black,
+  pdftitle={\ReportTitle-\ReportVersion},
+  pdfauthor={\ReportAuthor}
+}
+
+\setlist[itemize]{leftmargin=2em, itemsep=2pt, topsep=4pt}
+\setlist[enumerate]{leftmargin=2em, itemsep=2pt, topsep=4pt}
+\renewcommand{\labelitemi}{$\bullet$}
+\renewcommand{\labelitemii}{$\circ$}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\emergencystretch}{3em}
+\raggedbottom
+\linespread{1.25}
+
+\lstset{
+  basicstyle=\small\ttfamily,
+  breaklines=true,
+  breakatwhitespace=false,
+  columns=fullflexible,
+  frame=single,
+  keepspaces=true,
+  showstringspaces=false,
+  numbers=left,
+  numbersep=8pt,
+  xleftmargin=2em,
+  literate={π}{{$\pi$}}1 {Δ}{{$\Delta$}}1 {≈}{{$\approx$}}1 {×}{{$\times$}}1
+}
+
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\graphicspath{{figures/}{../../../../assets/images/}{../../../../assets/diagrams/}}

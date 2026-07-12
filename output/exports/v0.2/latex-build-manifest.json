@@ -1,0 +1,21 @@
+{
+  "version": "v0.2",
+  "source": "frozen",
+  "source_dir": "docs/report/versions/v0.2/latex",
+  "main_file": "docs/report/versions/v0.2/latex/main.tex",
+  "command": [
+    "C:\\texlive\\2026\\bin\\windows\\latexmk.EXE",
+    "-xelatex",
+    "-g",
+    "-halt-on-error",
+    "-file-line-error",
+    "-outdir=D:\\Projects\\embodied-intelligence-report\\tmp\\latex-build\\v0.2",
+    "main.tex"
+  ],
+  "latexmk": "C:\\texlive\\2026\\bin\\windows\\latexmk.EXE",
+  "returncode": 0,
+  "built_at_utc": "2026-07-12T17:18:50.351488+00:00",
+  "log": "tmp/latex-build/v0.2/main.log",
+  "output_pdf": "output/exports/v0.2/embodied-intelligence-report-v0.2.pdf",
+  "output_sha256": "1037905ee3cb5ce5affb2b1fd148929a8acee9d5d3cb41acf599deb5c1eafd98"
+}

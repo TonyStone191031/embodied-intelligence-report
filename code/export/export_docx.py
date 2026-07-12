@@ -16,6 +16,7 @@ from common import (
     WINDOWS_CONSOLAS,
     build_config,
     choose_writable_output_path,
+    is_formula_like_block,
     is_probably_local_target,
     normalize_links,
     parse_args_with_version,
@@ -92,6 +93,8 @@ def add_formula_paragraph(document: Document, block: list[str], font_name: str, 
     paragraph.paragraph_format.space_before = Pt(5)
     paragraph.paragraph_format.space_after = Pt(7)
     paragraph.paragraph_format.line_spacing = 1.15
+    paragraph.paragraph_format.keep_together = True
+    paragraph.paragraph_format.widow_control = True
     try:
         append_formula_omml(paragraph, formula_text)
         return
@@ -328,7 +331,7 @@ def render_markdown_to_docx(markdown_text: str, output_path: Path, config) -> No
 
         if stripped.startswith("```"):
             if in_code:
-                if code_kind == "math":
+                if code_kind == "math" or is_formula_like_block("\n".join(code_lines)):
                     add_formula_paragraph(document, code_lines, mono_font, formulas)
                 elif code_kind == "mermaid":
                     pass

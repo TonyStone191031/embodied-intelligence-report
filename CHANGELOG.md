@@ -4,6 +4,8 @@
 
 - 从 `v0.1` 冻结源稿快照启动新的正文工作版本。
 - 新一轮优先围绕技术主干案例化补厚、可复用图表资产和案例证据链展开。
+- 完成 `01~27` 全章节 LaTeX 主源迁移，新增 XeLaTeX/latexmk/Biber 构建链和 PDF 质量门。
+- 冻结 `docs/report/versions/v0.2/latex/`，生成 `output/exports/v0.2/embodied-intelligence-report-v0.2.pdf`；从本版本起 PDF 为主要交付物，Word 降为可选兼容产物。
 
 ## v0.1 - 2026-07-11
 
