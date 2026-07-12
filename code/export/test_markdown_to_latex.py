@@ -24,6 +24,23 @@ class MarkdownToLatexTests(unittest.TestCase):
         self.assertEqual(rendered.count(r"\end{xltabular}"), 1)
         self.assertIn(r"\endfirsthead", rendered)
 
+    def test_heading_levels_only_page_break_at_chapter_level(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp = Path(temp_dir)
+            source = temp / "source.md"
+            output = temp / "chapter.tex"
+            source.write_text(
+                "# 第一部分\n\n## 1. 章节\n\n### 1.1 小节\n",
+                encoding="utf-8",
+            )
+            convert_markdown(source, output, temp / "figures")
+            text = output.read_text(encoding="utf-8")
+            self.assertIn(r"\reportpart{第一部分}", text)
+            self.assertIn(r"\section*{1. 章节}", text)
+            self.assertIn(r"\subsection*{1.1 小节}", text)
+            self.assertNotIn(r"\part*{", text)
+            self.assertNotIn(r"\chapter*{1. 章节}", text)
+
     def test_standalone_table_link_advances_input(self) -> None:
         table_path = next(Path("docs/report/current/tables").glob("05-*.md")).resolve().as_posix()
         with tempfile.TemporaryDirectory() as temp_dir:

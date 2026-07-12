@@ -48,6 +48,15 @@
 \raggedbottom
 \linespread{1.25}
 
+% The 27 report parts are the page-level divisions. Numeric chapters and
+% subsections remain in the current page flow unless natural pagination occurs.
+\newcommand{\reportpart}[1]{%
+  \clearpage
+  \phantomsection
+  \noindent{\fontsize{18pt}{24pt}\selectfont\bfseries #1\par}%
+  \medskip
+}
+
 \lstset{
   basicstyle=\small\ttfamily,
   breaklines=true,

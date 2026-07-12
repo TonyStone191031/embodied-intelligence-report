@@ -31,7 +31,14 @@ tmp/latex-build/vX.Y/
 
 `main.tex` 是唯一主入口；章节按文件拆分，并通过 `\\input` 或 `\\include` 组装。Overleaf 风格的主文件加分章节组织适用于本项目，但本地仓库必须保证无需在线服务即可编译。
 
-## 3. 内容与资产
+## 3. 标题层级与分页
+
+- Markdown `#` 对应报告的 27 个部分，映射为带 `\\clearpage` 的 `\\reportpart`；每个部分必须从新页开始。
+- Markdown `##` 对应部分内部的数字章节，映射为连续排版的 `\\section*`，不得因为数字序号自动新建页面。
+- Markdown `###` 和 `####` 分别映射为 `\\subsection*` 和 `\\subsubsection*`，不得通过标题命令自动新建页面。
+- `\\clearpage` 仅由 `\\reportpart` 统一负责；正文章节源文件不得另外随意加入 `\\newpage`、`\\clearpage` 或 `\\cleardoublepage`。
+
+## 4. 内容与资产
 
 - 章节标题映射为 `\\part`、`\\chapter`、`\\section`、`\\subsection`。
 - 公式直接使用 LaTeX 数学环境，不经过 Markdown、Word OMML 或 PDF fallback 转换。
@@ -40,14 +47,14 @@ tmp/latex-build/vX.Y/
 - 代码块使用 `listings`，默认不依赖外部 Pygments 服务。
 - 链接先使用 `hyperref`、`url`；论文引用逐步迁移到 `references/references.bib` 和 Biber。
 
-## 4. 编译与发布
+## 5. 编译与发布
 
 - 优先使用 TeX Live、XeLaTeX、`latexmk` 和 Biber。
 - 统一通过 `code/export/run_export.py` 调用 LaTeX 构建，不复制版本专属导出脚本。
 - PDF 是主交付物；Word 是可选兼容产物，复杂公式和图表以 PDF 为准。
 - 最终文件放在 `output/exports/vX.Y/`；中间文件放在 `tmp/latex-build/vX.Y/`。
 
-## 5. 质量门
+## 6. 质量门
 
 每次编译和冻结必须检查：
 

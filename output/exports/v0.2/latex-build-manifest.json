@@ -14,8 +14,8 @@
   ],
   "latexmk": "C:\\texlive\\2026\\bin\\windows\\latexmk.EXE",
   "returncode": 0,
-  "built_at_utc": "2026-07-12T17:18:50.351488+00:00",
+  "built_at_utc": "2026-07-12T18:21:06.258837+00:00",
   "log": "tmp/latex-build/v0.2/main.log",
   "output_pdf": "output/exports/v0.2/embodied-intelligence-report-v0.2.pdf",
-  "output_sha256": "1037905ee3cb5ce5affb2b1fd148929a8acee9d5d3cb41acf599deb5c1eafd98"
+  "output_sha256": "57030cbe1bfffba567b92dfd68437a007e0db9895dbc0d84969e222278636a8c"
 }

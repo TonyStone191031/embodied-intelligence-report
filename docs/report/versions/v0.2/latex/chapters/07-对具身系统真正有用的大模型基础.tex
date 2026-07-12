@@ -1,6 +1,6 @@
 % Generated from 07-对具身系统真正有用的大模型基础.md; edit the LaTeX source after migration.
 
-\part*{第七部分 对具身系统真正有用的大模型基础}
+\reportpart{第七部分 对具身系统真正有用的大模型基础}
 \addcontentsline{toc}{part}{第七部分 对具身系统真正有用的大模型基础}
 \markboth{第七部分 对具身系统真正有用的大模型基础}{第七部分 对具身系统真正有用的大模型基础}
 
@@ -10,11 +10,11 @@
 
 但具身系统真正需要的大模型能力，与互联网任务中的“能力排行榜”并不一致。机器人更关心的是：模型是否能把历史观测压缩为可执行上下文、是否能把语言映射成任务结构、是否能在多模态条件下保留物理可执行性、以及是否能在不稳定环境中持续纠错。PaLM-E、RT-2、OpenVLA 等工作的重要性，更多在于它们探索了这些接口如何建立，而不是已经证明了“通用机器人大脑”成熟。\href{https://arxiv.org/abs/2303.03378}{PaLM-E}、\href{https://arxiv.org/abs/2307.15818}{RT-2}、\href{https://arxiv.org/abs/2406.09246}{OpenVLA}
 
-\chapter*{32. Transformer 与序列建模}
+\section*{32. Transformer 与序列建模}
 \addcontentsline{toc}{chapter}{32. Transformer 与序列建模}
 \markboth{32. Transformer 与序列建模}{32. Transformer 与序列建模}
 
-\section*{32.1 序列建模为何适合机器人数据}
+\subsection*{32.1 序列建模为何适合机器人数据}
 \addcontentsline{toc}{section}{32.1 序列建模为何适合机器人数据}
 
 
@@ -43,7 +43,7 @@ x_{1:T} = [\,l_{1:L};\ o_1,\ x_1,\ a_1,\ \dots,\ o_T,\ x_T\,], \qquad
 
 其中 \(l_{1:L}\) 是语言任务描述，\(o_t\) 是视觉或多模态观测，\(x_t\) 是本体状态。这样写的意义在于，它把“任务条件”“状态历史”“动作历史”统一进一个可条件化序列接口，而不必预先强行规定哪个模块天然高于哪个模块。Transformer 最早被系统化提出于 \href{https://arxiv.org/abs/1706.03762}{《Attention Is All You Need》}；对机器人而言，它真正可迁移的不是机器翻译经验本身，而是这种“把不同时间步和不同模态放进同一条件分布”的组织方式。
 
-\section*{32.2 自回归策略学习与条件似然}
+\subsection*{32.2 自回归策略学习与条件似然}
 \addcontentsline{toc}{section}{32.2 自回归策略学习与条件似然}
 
 
@@ -77,7 +77,7 @@ execute(next_action)
 
 其中 \(o_{\le t}\) 表示截至时刻 \(t\) 的观测历史，\(a_{<t}\) 表示历史动作，\(l\) 表示任务语言。这个目标与语言模型表面上很相似，但在机器人里多了两个关键差异：第一，动作错误会通过物理系统放大；第二，历史观测不仅是语义上下文，还是控制可行性的状态依据。因此，机器人中的条件似然优化永远不是“把动作当句子生成”那么简单。
 
-\section*{32.3 token 化在动作建模中的含义}
+\subsection*{32.3 token 化在动作建模中的含义}
 \addcontentsline{toc}{section}{32.3 token 化在动作建模中的含义}
 
 
@@ -91,7 +91,7 @@ A_t = [a_t, a_{t+1}, \dots, a_{t+H-1}]
 
 那么模型输出的就不再是单步动作，而是一个局部时间窗口中的动作计划。这种写法在机器人中的吸引力在于，它能减轻逐步自回归生成造成的抖动和误差累积，也更接近很多现实控制器按小时间段执行参考轨迹的方式。ACT、Diffusion Policy 与多种分块策略都体现了这一路线的工程合理性，代表性工作可参见 \href{https://arxiv.org/abs/2304.13705}{ACT} 和 \href{https://arxiv.org/abs/2303.04137}{Diffusion Policy}。
 
-\section*{32.4 上下文窗口与长期任务问题}
+\subsection*{32.4 上下文窗口与长期任务问题}
 \addcontentsline{toc}{section}{32.4 上下文窗口与长期任务问题}
 
 
@@ -139,7 +139,7 @@ action = policy(policy_input)
 
 这个流程说明，具身系统真正需要的不是“无限窗口”，而是“可筛选、可压缩、可检索、可回退”的历史管理。也因此，后续很多所谓长上下文机器人工作，真正值得看的不是窗口长度数字，而是它如何定义关键事件、如何做记忆读写、以及是否证明这些机制对长期成功率与恢复能力确有贡献。
 
-\section*{32.5 为什么动作序列与文本序列不能简单类比}
+\subsection*{32.5 为什么动作序列与文本序列不能简单类比}
 \addcontentsline{toc}{section}{32.5 为什么动作序列与文本序列不能简单类比}
 
 
@@ -168,11 +168,11 @@ J = \sum_{t=1}^{T} \ell(x_t, a_t) + \lambda_1 \, \mathrm{Risk}(a_t) + \lambda_2 
 
 从学习角度看，文本标记的语义边界往往由离散词表天然给出；动作标记的边界却常常是人为设计的。我们到底是直接预测关节增量、末端位姿、力控目标、技能标签，还是某种潜在动作编码，本身就会改写问题难度。因此，动作序列与文本序列最容易被误类比的地方，不是都能“自回归”，而是忽略了动作表示、执行器、控制频率和安全闭环共同构成了真正的问题定义。
 
-\chapter*{33. 多模态编码、连接器与 token 接口}
+\section*{33. 多模态编码、连接器与 token 接口}
 \addcontentsline{toc}{chapter}{33. 多模态编码、连接器与 token 接口}
 \markboth{33. 多模态编码、连接器与 token 接口}{33. 多模态编码、连接器与 token 接口}
 
-\section*{33.1 多模态大模型的基本问题设定：为什么总要经过“可供语言主干消费”的接口}
+\subsection*{33.1 多模态大模型的基本问题设定：为什么总要经过“可供语言主干消费”的接口}
 \addcontentsline{toc}{section}{33.1 多模态大模型的基本问题设定：为什么总要经过“可供语言主干消费”的接口}
 
 
@@ -195,7 +195,7 @@ y = \mathrm{LM}\!\left([u^{(1)};\dots;u^{(M)};l]\right)
 
 但必须立刻加上一句限制：这只是当前最实用的主流解法，不是已经被理论证明的最优结构。它本质上是一种“为了复用强语言主干而建立的桥接接口”。因此，用户提出的直觉其实抓住了问题核心：多模态大模型今天确实大量依赖“先编码、再桥接、再让语言主干消费”的范式；学界真正争论的，不是这件事有没有发生，而是这种接口在什么条件下足够好、什么时候会成为瓶颈，以及有没有更原生的替代路线。
 
-\section*{33.2 编码器选型：视觉、语音、触觉、状态与动作信号分别适合什么编码器}
+\subsection*{33.2 编码器选型：视觉、语音、触觉、状态与动作信号分别适合什么编码器}
 \addcontentsline{toc}{section}{33.2 编码器选型：视觉、语音、触觉、状态与动作信号分别适合什么编码器}
 
 
@@ -234,7 +234,7 @@ y = \mathrm{LM}\!\left([u^{(1)};\dots;u^{(M)};l]\right)
 
 这个表最重要的提醒不是“哪种编码器最好”，而是“哪类信号绝不能被错误抽象”。在视觉问答里，局部几何被轻微压缩也许还能容忍；但在接触插装、双足平衡或高速闭环里，错配编码器带来的不是分数下降，而是整条控制链路的不稳定。
 
-\section*{33.3 连接器设计：线性投影、MLP adapter、Q-Former、Perceiver Resampler 与 latent query}
+\subsection*{33.3 连接器设计：线性投影、MLP adapter、Q-Former、Perceiver Resampler 与 latent query}
 \addcontentsline{toc}{section}{33.3 连接器设计：线性投影、MLP adapter、Q-Former、Perceiver Resampler 与 latent query}
 
 
@@ -277,7 +277,7 @@ u_i = \mathrm{CrossAttn}(q_i, H_{\text{vision}}), \qquad i=1,\dots,K
 
 这说明一个很关键的工程事实：复杂连接器的意义，往往不在于它自己便宜，而在于它能把原本会在主干里持续放大的上下文成本，前移为一次更受控的压缩成本。只要 \(K \ll N\)，即使连接器本身更复杂，端到端推理仍可能更省预算。对机器人而言，这种“前端多做一点结构化压缩，换下游稳定时延”的取舍，常常比纯 benchmark 分数更重要。
 
-\section*{33.4 token 组织方式：prefix、interleaving、patch token、latent slot、action token}
+\subsection*{33.4 token 组织方式：prefix、interleaving、patch token、latent slot、action token}
 \addcontentsline{toc}{section}{33.4 token 组织方式：prefix、interleaving、patch token、latent slot、action token}
 
 
@@ -317,7 +317,7 @@ a_{t:t+H} <- π_low(x_t^state, g_t)
 
 这段伪代码里最容易被忽视的一行，其实是 \texttt{\detokenize{BudgetAllocate}}。它提醒我们：多模态系统的关键不只是“会不会编码”，而是“在给定上下文预算与时延预算下，最终哪些信息有资格进入主干”。对机器人来说，这一步就是许多性能差异与失败模式的真实起点。
 
-\section*{33.5 信息损失、模态鸿沟与上下文预算：为什么“全都编码成串行 token”既强大又粗糙}
+\subsection*{33.5 信息损失、模态鸿沟与上下文预算：为什么“全都编码成串行 token”既强大又粗糙}
 \addcontentsline{toc}{section}{33.5 信息损失、模态鸿沟与上下文预算：为什么“全都编码成串行 token”既强大又粗糙}
 
 
@@ -355,7 +355,7 @@ T_{\text{encode}} + T_{\text{infer}} \le \Delta t
 
 这四类失败模式的共同点在于：它们都不是传统意义上的“模型不会推理”，而是接口预算策略本身定义错了。因此，多模态 token 化的真正争论焦点，不在于“是否统一”，而在于“统一之前，哪些结构绝不能被代价过低地抹平”。
 
-\section*{33.6 经验证据、可解释性线索与能力边界：哪些问题已被论证，哪些仍主要靠经验工程}
+\subsection*{33.6 经验证据、可解释性线索与能力边界：哪些问题已被论证，哪些仍主要靠经验工程}
 \addcontentsline{toc}{section}{33.6 经验证据、可解释性线索与能力边界：哪些问题已被论证，哪些仍主要靠经验工程}
 
 
@@ -385,11 +385,11 @@ T_{\text{encode}} + T_{\text{infer}} \le \Delta t
 \item 对具身系统最值得警惕的未解问题：主干上下文如何与高频状态、动作回路和安全旁路协同。这一点至今主要还是系统工程问题，而不是已经被完备解决的模型问题。
 \end{enumerate}
 
-\chapter*{34. 从 VLM 到 VLA}
+\section*{34. 从 VLM 到 VLA}
 \addcontentsline{toc}{chapter}{34. 从 VLM 到 VLA}
 \markboth{34. 从 VLM 到 VLA}{34. 从 VLM 到 VLA}
 
-\section*{34.1 感知理解能力如何迁移到机器人}
+\subsection*{34.1 感知理解能力如何迁移到机器人}
 \addcontentsline{toc}{section}{34.1 感知理解能力如何迁移到机器人}
 
 
@@ -403,7 +403,7 @@ T_{\text{encode}} + T_{\text{infer}} \le \Delta t
 
 更准确地说，VLM 真正迁移过来的不是“控制能力”，而是更强的任务相关场景解释能力。它们让机器人更容易知道该看哪里、该把哪些对象关系送给后续模块，但还不能自动替代几何、状态估计和控制链路。
 
-\section*{34.2 语言作为任务接口的优势与代价}
+\subsection*{34.2 语言作为任务接口的优势与代价}
 \addcontentsline{toc}{section}{34.2 语言作为任务接口的优势与代价}
 
 
@@ -422,7 +422,7 @@ skill_plan = bind_to_skills(task_spec, constraints, skill_library)
 
 这里 \(task_spec\)、\texttt{\detokenize{constraints}} 和 \(skill_plan\) 往往分别属于不同抽象层。大模型在第一步和第二步最有优势，但第三步开始就要显著依赖本体、技能库和现场状态。也正因此，语言接口的真实价值更像“把人类意图接入系统”，而不是“替代执行接口本身”。
 
-\section*{34.3 动作输出是最难补上的一环}
+\subsection*{34.3 动作输出是最难补上的一环}
 \addcontentsline{toc}{section}{34.3 动作输出是最难补上的一环}
 
 
@@ -476,7 +476,7 @@ a_{t:t+H} = \pi_{\mathrm{low}}(x_t, z_k, \theta_k)
 
 从 VLM 走向 VLA，看起来只是“再加一个动作头”，但实际上这是整个系统里最难的一步。因为视觉与语言理解主要解决的是语义问题，而动作输出必须同时满足控制频率、连续性、物理可实现性和安全约束。这也是为什么许多看似成功的多模态机器人路线，一旦走到真实动作生成与长期闭环执行时，性能和可靠性会迅速掉下来。
 
-\section*{34.4 从“看懂”到“做对”中间缺了什么}
+\subsection*{34.4 从“看懂”到“做对”中间缺了什么}
 \addcontentsline{toc}{section}{34.4 从“看懂”到“做对”中间缺了什么}
 
 
@@ -494,11 +494,11 @@ a_{t:t+H} = \pi_{\mathrm{low}}(x_t, z_k, \theta_k)
 
 这一定义几乎可以看作后文 08、11、15 三章的总入口。因为后续很多章节，实际都在拆这条桥接链上的某一个关键缺口。
 
-\chapter*{35. 大模型推理能力与机器人规划}
+\section*{35. 大模型推理能力与机器人规划}
 \addcontentsline{toc}{chapter}{35. 大模型推理能力与机器人规划}
 \markboth{35. 大模型推理能力与机器人规划}{35. 大模型推理能力与机器人规划}
 
-\section*{35.1 指令分解}
+\subsection*{35.1 指令分解}
 \addcontentsline{toc}{section}{35.1 指令分解}
 
 
@@ -517,7 +517,7 @@ for g in subgoals:
 
 大模型最自然能迁移到机器人的一类能力，是高层指令分解：把“把桌面收拾干净”这类模糊目标拆成对象识别、优先级排序、技能调用和子目标序列。这种能力对于开放场景任务尤其重要，因为机器人系统过去最脆弱的部分之一，正是高层任务接口过窄、组合任务过难手工编排。
 
-\section*{35.2 常识与世界知识}
+\subsection*{35.2 常识与世界知识}
 \addcontentsline{toc}{section}{35.2 常识与世界知识}
 
 
@@ -533,7 +533,7 @@ p(h \mid o) \propto p(o \mid h)p(h)
 
 而不是让常识直接替代观测。换句话说，常识价值在于帮助排序候选假设，却不能越过 grounded perception 直接宣布世界是什么样子。这也是为什么“知识很多”与“现场可靠”是两件必须分开的能力。
 
-\section*{35.3 错误累积与幻觉在物理世界中的表现}
+\subsection*{35.3 错误累积与幻觉在物理世界中的表现}
 \addcontentsline{toc}{section}{35.3 错误累积与幻觉在物理世界中的表现}
 
 
@@ -551,7 +551,7 @@ p(h \mid o) \propto p(o \mid h)p(h)
 
 这也是为什么具身系统比纯文本系统更需要外部校验、状态监控和可接管机制。因为这里的错误不是只会污染下一句，而是会污染下一段物理历史。
 
-\section*{35.4 为什么高层推理能力必须重新映射到控制闭环}
+\subsection*{35.4 为什么高层推理能力必须重新映射到控制闭环}
 \addcontentsline{toc}{section}{35.4 为什么高层推理能力必须重新映射到控制闭环}
 
 
@@ -567,7 +567,7 @@ p(h \mid o) \propto p(o \mid h)p(h)
 
 对后续报告维护来说，这一节也可以作为识别“只会讲高层故事”的过滤器。凡是没有明确说明高层推理如何进入闭环控制的路线，都应默认其距离真实系统还有一段桥接成本。
 
-\section*{35.5 检索增强与外部记忆为何比“纯靠参数记住一切”更现实}
+\subsection*{35.5 检索增强与外部记忆为何比“纯靠参数记住一切”更现实}
 \addcontentsline{toc}{section}{35.5 检索增强与外部记忆为何比“纯靠参数记住一切”更现实}
 
 
@@ -594,11 +594,11 @@ M_t=\mathrm{Retrieve}(q_t,\mathcal{B}), \qquad
 
 其中 \(q_t\) 是由当前观测、本体状态、任务目标与局部记忆构成的查询，\(\mathcal{B}\) 是外部记忆库，\(M_t\) 则是被取回的任务相关片段。这个写法的重要性在于，它把“记忆”从模型参数中的隐式幻想，改写成了一个显式的运行时接口：记忆何时写入、按什么键检索、如何与当前状态融合、在多大时延预算内返回，都会直接影响系统能否在现场稳定工作。对机器人而言，外部记忆真正有价值的对象往往包括三类：环境与对象状态、失败恢复案例、以及用户与场景专属流程约束。缺少这三类记忆中的任何一类，系统都会表现出“高层很懂、现场很盲”的断裂。
 
-\chapter*{36. 对具身系统真正有价值的大模型能力清单}
+\section*{36. 对具身系统真正有价值的大模型能力清单}
 \addcontentsline{toc}{chapter}{36. 对具身系统真正有价值的大模型能力清单}
 \markboth{36. 对具身系统真正有价值的大模型能力清单}{36. 对具身系统真正有价值的大模型能力清单}
 
-\section*{36.1 任务描述理解}
+\subsection*{36.1 任务描述理解}
 \addcontentsline{toc}{section}{36.1 任务描述理解}
 
 
@@ -616,7 +616,7 @@ M_t=\mathrm{Retrieve}(q_t,\mathcal{B}), \qquad
 
 能够将自然语言、示范、视觉上下文和历史记忆整合为任务意图，是当前大模型对机器人最现实也最直接的贡献之一。
 
-\section*{36.2 语义检索与记忆}
+\subsection*{36.2 语义检索与记忆}
 \addcontentsline{toc}{section}{36.2 语义检索与记忆}
 
 
@@ -635,7 +635,7 @@ action = policy(context)
 
 与其让模型每次都从头推理，不如让它在历史任务、对象属性、环境拓扑和过往失败案例中做检索增强。这对长期运行系统尤其重要。 机器人记忆真正应该检索的，不只是“知识”，而是带执行后果的经验，例如上次抓同类物体为什么滑脱、哪条接近路径在当前货架布局下更稳定、某个用户偏好是否影响任务优先级。因此，外部记忆在具身系统中天然是多模态、情境化、带时间衰减的，而不是普通问答系统那种静态知识库。
 
-\section*{36.3 长时程规划}
+\subsection*{36.3 长时程规划}
 \addcontentsline{toc}{section}{36.3 长时程规划}
 
 
@@ -660,7 +660,7 @@ while not goal_done(plan):
 
 这里 \texttt{\detokenize{replan}} 不是异常分支，而是长期任务的常态组成部分。具身系统中的长时程能力，本质上不是“第一次就规划正确”，而是“在环境变化与局部失败后仍能维持总体任务方向”。
 
-\section*{36.4 交互式纠错与解释}
+\subsection*{36.4 交互式纠错与解释}
 \addcontentsline{toc}{section}{36.4 交互式纠错与解释}
 
 
@@ -678,7 +678,7 @@ while not goal_done(plan):
 
 这类能力不只是“体验更自然”，而是直接改善安全与闭环效率。执行前澄清歧义、失败后请求补充观测、动作前解释当前不确定点，都能显著降低高风险错误直接进入控制链的概率。因此，交互式纠错应被视为具身系统的安全和恢复接口，而不仅是对话能力附属品。
 
-\section*{36.5 哪些流行大模型能力暂时还不应被高估}
+\subsection*{36.5 哪些流行大模型能力暂时还不应被高估}
 \addcontentsline{toc}{section}{36.5 哪些流行大模型能力暂时还不应被高估}
 
 
@@ -712,7 +712,7 @@ for subgoal in parse_plan(plan):
 
 本部分的结论因此非常明确：大模型确实为具身系统提供了新的高层接口、共享表示和任务推理能力，但这些能力只有在被重新映射到动作表示、技能层、状态估计和控制回路之后，才会转化为真实的机器人能力。后文的系统架构、VLA、规划推理和数据工程章节，实质上都在处理这一步映射问题。
 
-\chapter*{图表与接口补充}
+\section*{图表与接口补充}
 \addcontentsline{toc}{chapter}{图表与接口补充}
 \markboth{图表与接口补充}{图表与接口补充}
 
@@ -720,7 +720,7 @@ for subgoal in parse_plan(plan):
 
 同样，\texttt{\detokenize{VLM -> VLA}} 的差异也不宜只用一句“多了动作输出”带过。更合适的做法，是在后续版本中把两者放进一张接口表里，明确比较输入上下文、输出对象、实时性要求、错误代价和部署方式。这样读者就不会把“视觉语言理解增强”误读为“机器人动作能力自然继承”。
 
-\chapter*{图 7-1 大模型能力到具身能力的过滤图}
+\section*{图 7-1 大模型能力到具身能力的过滤图}
 \addcontentsline{toc}{chapter}{图 7-1 大模型能力到具身能力的过滤图}
 \markboth{图 7-1 大模型能力到具身能力的过滤图}{图 7-1 大模型能力到具身能力的过滤图}
 
@@ -735,7 +735,7 @@ for subgoal in parse_plan(plan):
 
 在当前版本中，\texttt{\detokenize{图 7-1 大模型能力到具身能力的过滤图}} 已承担“文本大模型能力如何被压缩成具身系统可用能力”的主过滤图职责；\texttt{\detokenize{表 7-1 VLM 到 VLA 的接口差异表}} 则把两者在输入上下文、输出对象、实时性、错误代价与部署方式上的差异正式固定下来。
 
-\chapter*{表 7-1 VLM 到 VLA 的接口差异表}
+\section*{表 7-1 VLM 到 VLA 的接口差异表}
 \addcontentsline{toc}{chapter}{表 7-1 VLM 到 VLA 的接口差异表}
 \markboth{表 7-1 VLM 到 VLA 的接口差异表}{表 7-1 VLM 到 VLA 的接口差异表}
 

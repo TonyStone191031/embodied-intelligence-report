@@ -1,6 +1,6 @@
 % Generated from 16-安全、对齐、验证与治理.md; edit the LaTeX source after migration.
 
-\part*{第十六部分 安全、对齐、验证与治理}
+\reportpart{第十六部分 安全、对齐、验证与治理}
 \addcontentsline{toc}{part}{第十六部分 安全、对齐、验证与治理}
 \markboth{第十六部分 安全、对齐、验证与治理}{第十六部分 安全、对齐、验证与治理}
 
@@ -8,11 +8,11 @@
 
 随着基础模型进入机器人控制栈，这一问题进一步复杂化。传统机器人安全更强调机械风险、功能安全与工作单元隔离；大模型时代则还必须处理误解指令、错误工具调用、远程运维链路、数据治理与模型责任边界。工业机器人安全标准与 AI 风险治理框架正在逐步汇合，相关框架与标准可参见 \href{https://www.nist.gov/itl/ai-risk-management-framework}{NIST AI 风险管理框架}、\href{https://www.iso.org/standard/59820.html}{ISO 10218 机器人安全标准} 与 \href{https://www.iso.org/standard/53820.html}{ISO 13482 个人护理机器人安全标准}。
 
-\chapter*{76. 具身安全为何是一级问题}
+\section*{76. 具身安全为何是一级问题}
 \addcontentsline{toc}{chapter}{76. 具身安全为何是一级问题}
 \markboth{76. 具身安全为何是一级问题}{76. 具身安全为何是一级问题}
 
-\section*{76.1 物理世界中的损害与责任}
+\subsection*{76.1 物理世界中的损害与责任}
 \addcontentsline{toc}{section}{76.1 物理世界中的损害与责任}
 
 
@@ -24,7 +24,7 @@
 
 软件模型的错误通常造成错误信息、错误推荐或错误分类；具身系统的错误则可能造成物理伤害、财产损失和责任事故。这使得机器人安全天然比许多纯软件 AI 场景具有更高后果风险。
 
-\section*{76.2 与纯软件 AI 风险的差异}
+\subsection*{76.2 与纯软件 AI 风险的差异}
 \addcontentsline{toc}{section}{76.2 与纯软件 AI 风险的差异}
 
 
@@ -36,7 +36,7 @@
 
 纯软件 AI 更容易集中在信息真实性、偏见、隐私和误导风险上；具身系统则还要额外面对碰撞、跌倒、夹伤、误触发、失控移动和执行器失效等风险。
 
-\section*{76.3 安全与商业化之间的关系}
+\subsection*{76.3 安全与商业化之间的关系}
 \addcontentsline{toc}{section}{76.3 安全与商业化之间的关系}
 
 
@@ -54,11 +54,11 @@
 
 对机器人而言，安全不是阻碍商业化的额外负担，而是商业化成立的前提。没有安全保证的系统，无法进入高价值真实场景。
 
-\chapter*{77. 安全问题分类}
+\section*{77. 安全问题分类}
 \addcontentsline{toc}{chapter}{77. 安全问题分类}
 \markboth{77. 安全问题分类}{77. 安全问题分类}
 
-\section*{77.1 物理安全}
+\subsection*{77.1 物理安全}
 \addcontentsline{toc}{section}{77.1 物理安全}
 
 
@@ -76,7 +76,7 @@ a_t \in \mathcal{A}_{safe}(x_t, e_t)
 
 涉及碰撞、力过载、稳定性失控、危险接触和环境破坏。
 
-\section*{77.2 功能安全}
+\subsection*{77.2 功能安全}
 \addcontentsline{toc}{section}{77.2 功能安全}
 
 
@@ -98,7 +98,7 @@ if sensor_fault or controller_timeout:
 
 涉及故障检测、异常停机、冗余设计、控制回退和失效安全机制。很多风险不来自“模型胡来”，而来自系统在局部异常下没有及时进入安全模式。
 
-\section*{77.3 网络与数据安全}
+\subsection*{77.3 网络与数据安全}
 \addcontentsline{toc}{section}{77.3 网络与数据安全}
 
 
@@ -110,7 +110,7 @@ if sensor_fault or controller_timeout:
 
 机器人越来越联网、越来越依赖远程更新和云端协同，这意味着攻击面也显著扩大。感知数据、控制接口和远程运维链路都可能成为安全漏洞。
 
-\section*{77.4 模型行为安全}
+\subsection*{77.4 模型行为安全}
 \addcontentsline{toc}{section}{77.4 模型行为安全}
 
 
@@ -138,11 +138,11 @@ a_t = \Pi_{\text{safe}}\!\left(\pi_\theta(h_t), x_t\right)
 
 因此，行为安全必须依赖多层机制，而不能只靠训练时对齐。动作裁剪、工作空间约束、接触阈值监测、技能白名单、任务级回退逻辑和人在回路审批，往往需要与模型本体共同组成联合安全系统。对高责任场景而言，最危险的从来不是“模型完全不会”，而是“模型多数时候看起来会，因此偶发越界更难被人类及时察觉”。
 
-\chapter*{78. 验证与测试框架}
+\section*{78. 验证与测试框架}
 \addcontentsline{toc}{chapter}{78. 验证与测试框架}
 \markboth{78. 验证与测试框架}{78. 验证与测试框架}
 
-\section*{78.1 仿真验证}
+\subsection*{78.1 仿真验证}
 \addcontentsline{toc}{section}{78.1 仿真验证}
 
 
@@ -162,7 +162,7 @@ for scenario in adversarial_or_random_scenarios:
 
 从证据结构看，仿真验证至少应该沉淀三类资产：场景模板、扰动模板和失效判据。前两者决定“你是否系统性地找边界”，后者决定“系统究竟是在什么条件下被判失败”。没有这三类资产，仿真结果再多也很难变成可重复利用的安全证据。
 
-\section*{78.2 真机验证}
+\subsection*{78.2 真机验证}
 \addcontentsline{toc}{section}{78.2 真机验证}
 
 
@@ -192,7 +192,7 @@ for scenario in adversarial_or_random_scenarios:
 
 真机验证更接近真实风险，因此对安全论证至关重要。但它昂贵、慢，且本身也可能带来测试风险，所以必须和仿真回归、事故回放、版本审计一起形成闭环。
 
-\section*{78.3 红队测试与异常工况测试}
+\subsection*{78.3 红队测试与异常工况测试}
 \addcontentsline{toc}{section}{78.3 红队测试与异常工况测试}
 
 
@@ -226,7 +226,7 @@ for scenario in red_team_library:
 
 这段伪代码的重点不在实现细节，而在于强调：真正成熟的红队测试不是“一次性把系统弄崩”，而是把失败样本自动转成回归资产和版本放行约束。也就是说，红队测试必须同时服务发现、追责和长期治理三件事，否则它只会停留在安全审查表演层。
 
-\section*{78.4 人在回路与人工接管机制}
+\subsection*{78.4 人在回路与人工接管机制}
 \addcontentsline{toc}{section}{78.4 人在回路与人工接管机制}
 
 
@@ -266,7 +266,7 @@ a_t = \alpha_t a_t^{\text{human}} + (1-\alpha_t) a_t^{\text{auto}}
 
 这也是为什么近年的共享自治研究越来越强调层级分工与接管接口设计，而不只强调“让人能插手”。\href{https://arxiv.org/abs/2307.01943}{面向关节型机器人的层级规划与策略塑形共享自治} 更接近一种高层任务规划与低层形状约束共同作用的写法；而相邻领域的 \href{https://arxiv.org/abs/2505.09889}{Diffusion-SAFE：安全的人机驾驶接管扩散框架} 则提醒我们，简单动作拼接或朴素交接本身也可能带来新的不安全瞬间。把这些启发迁移到具身系统里，一个更稳健的接管原则是：高层批准、中层监督、低层急停三种权限应当被显式区分，而不是统一丢给“人工可接管”这一句模糊承诺。
 
-\section*{78.5 从“测试很多次”到“证据链足够”的跃迁}
+\subsection*{78.5 从“测试很多次”到“证据链足够”的跃迁}
 \addcontentsline{toc}{section}{78.5 从“测试很多次”到“证据链足够”的跃迁}
 
 
@@ -301,11 +301,11 @@ C_{\text{regression}}\!\ge\!\tau_4
 
 其中 \(C_{\text{normal}}\)、\(C_{\text{edge}}\)、\(C_{\text{recovery}}\)、\(C_{\text{regression}}\) 分别表示正常工况、边界工况、异常恢复和历史风险回归的证据覆盖度。真正成熟的放行口径不应是“主流程成功率上升了”，而应是“关键风险组合的未解释空白在收缩”。
 
-\chapter*{79. 标准、认证与治理}
+\section*{79. 标准、认证与治理}
 \addcontentsline{toc}{chapter}{79. 标准、认证与治理}
 \markboth{79. 标准、认证与治理}{79. 标准、认证与治理}
 
-\section*{79.1 机器人安全标准}
+\subsection*{79.1 机器人安全标准}
 \addcontentsline{toc}{section}{79.1 机器人安全标准}
 
 
@@ -317,7 +317,7 @@ C_{\text{regression}}\!\ge\!\tau_4
 
 因此，标准不是技术之外的文书负担，而是工程系统的上游约束。谁忽视这一点，谁就会在从实验室走向现实部署时突然发现整条验证链都需要重建。
 
-\section*{79.2 AI 治理与责任边界}
+\subsection*{79.2 AI 治理与责任边界}
 \addcontentsline{toc}{section}{79.2 AI 治理与责任边界}
 
 
@@ -349,7 +349,7 @@ C_{\text{regression}}\!\ge\!\tau_4
 
 只要这四个角色中的任一角色含糊不清，治理就会迅速退化成“系统很复杂，所以谁都说不清”。而具身系统恰恰最怕这种模糊，因为责任模糊会直接放大部署风险。
 
-\section*{79.3 数据与场景合规}
+\subsection*{79.3 数据与场景合规}
 \addcontentsline{toc}{section}{79.3 数据与场景合规}
 
 
@@ -361,7 +361,7 @@ C_{\text{regression}}\!\ge\!\tau_4
 
 对长期维护报告而言，这一节还有一个很实际的含义：以后凡出现“某公司拥有大量真实场景数据”这种判断，都应同时追问这些数据的授权结构、场景使用边界和回放权限。否则，“数据优势”很容易被误写成无条件正向信号，而忽略其同时伴随的合规成本和潜在部署约束。
 
-\section*{79.4 安全基础设施的新趋势}
+\subsection*{79.4 安全基础设施的新趋势}
 \addcontentsline{toc}{section}{79.4 安全基础设施的新趋势}
 
 
@@ -384,7 +384,7 @@ if anomaly_detector.triggered(robot_state, observation):
     action = emergency_controller.stop()
 \end{lstlisting}
 
-\section*{79.5 一个更可执行的治理操作模型}
+\subsection*{79.5 一个更可执行的治理操作模型}
 \addcontentsline{toc}{section}{79.5 一个更可执行的治理操作模型}
 
 
@@ -405,7 +405,7 @@ if anomaly_detector.triggered(robot_state, observation):
 
 这类面板的重要性，在于它把“治理”从抽象责任讨论，压回可持续维护的数据结构。类似 \href{https://arxiv.org/abs/2604.11174}{EmbodiedGovBench：具身系统治理、恢复与升级安全基准} 这类工作真正提供的启发，也不是某一个具体分数，而是把恢复、治理与升级安全当成可以持续评测的对象。对具身系统而言，只要这些指标长期缺位，所谓治理就很容易退化成“事故之后再开会解释”；只有它们被前置写入日常运转面板，治理才会真正成为系统能力的一部分。
 
-\section*{79.6 版本更新后的再验证门槛}
+\subsection*{79.6 版本更新后的再验证门槛}
 \addcontentsline{toc}{section}{79.6 版本更新后的再验证门槛}
 
 
@@ -424,7 +424,7 @@ if anomaly_detector.triggered(robot_state, observation):
 
 本部分的结论是：具身系统的安全不应被理解为“控制器够稳就行”，而是一整套从高层行为边界到底层失效安全、从仿真测试到真机验证、从模型责任到部署治理的系统工程问题。也因此，本章最适合充当全书的“否决层”：很多路线在模型能力、数据规模和商业故事上都可能越来越强，但只要其接管边界、日志可追溯性、异常回退、红队覆盖和版本回滚能力没有同步成熟，就不应轻易上修整体判断。
 
-\chapter*{图 16-1 安全、验证与治理闭环图}
+\section*{图 16-1 安全、验证与治理闭环图}
 \addcontentsline{toc}{chapter}{图 16-1 安全、验证与治理闭环图}
 \markboth{图 16-1 安全、验证与治理闭环图}{图 16-1 安全、验证与治理闭环图}
 
@@ -437,7 +437,7 @@ if anomaly_detector.triggered(robot_state, observation):
 \label{fig:16-安全验证治理闭环图}
 \end{figure}
 
-\chapter*{图表与验证补充}
+\section*{图表与验证补充}
 \addcontentsline{toc}{chapter}{图表与验证补充}
 \markboth{图表与验证补充}{图表与验证补充}
 

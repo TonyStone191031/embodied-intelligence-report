@@ -8,7 +8,8 @@ from common import ROOT, read_text
 from render_assets import render_mermaid_to_png
 
 
-HEADING_COMMANDS = {1: "part", 2: "chapter", 3: "section", 4: "subsection"}
+HEADING_COMMANDS = {1: "reportpart", 2: "section", 3: "subsection", 4: "subsubsection"}
+TOC_COMMANDS = {1: "part", 2: "section", 3: "subsection", 4: "subsubsection"}
 FENCE_RE = re.compile(r"^```(?P<kind>[^`]*)$")
 LINK_RE = re.compile(r"(?P<image>!)?\[(?P<label>[^\]]*)\]\((?P<target>[^)]+)\)")
 INLINE_RE = re.compile(
@@ -219,12 +220,18 @@ def render_display_math(content: list[str]) -> str:
 def render_heading(level: int, title: str) -> str:
     """Keep the report's explicit outline numbering and populate the TOC."""
     command = HEADING_COMMANDS[level]
+    toc_command = TOC_COMMANDS[level]
     rendered = render_inline(title)
     toc_title = escape_text(title)
+    heading = (
+        rf"\reportpart{{{rendered}}}"
+        if level == 1
+        else rf"\{command}*{{{rendered}}}"
+    )
     return "\n".join(
         [
-            rf"\{command}*{{{rendered}}}",
-            rf"\addcontentsline{{toc}}{{{command}}}{{{toc_title}}}",
+            heading,
+            rf"\addcontentsline{{toc}}{{{toc_command}}}{{{toc_title}}}",
             rf"\markboth{{{toc_title}}}{{{toc_title}}}" if level <= 2 else "",
             "",
         ]
