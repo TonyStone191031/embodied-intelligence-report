@@ -1,34 +1,28 @@
-# v0.2 LaTeX 工具链记录
+# v0.3 LaTeX 工具链状态
 
-本文件记录当前 Windows 构建环境，用于复现 v0.2 PDF。路径是本机工具链位置，不应被正文或版本源引用。
+本文件记录 v0.3 当前 Windows 构建环境和待恢复事项。路径只属于本机工具链，不得进入正文。
 
-## 工具
+## 目标工具链
 
-- TeX 发行版：TeX Live 2026
-- 安装根目录：`C:/texlive/2026`
-- XeLaTeX：TeX Live 2026，XeTeX 3.141592653-2.6-0.999998
-- latexmk：4.88，2026-03-09
-- Biber：2.21
-- tlmgr：revision 79591，2026-07-05
-- 构建入口：`python code/export/run_export.py --version v0.2 --source current`
-- LaTeX 直接构建：`python code/export/export_latex.py --version v0.2 --source current`
-
-## 字体
-
+- XeLaTeX + `latexmk` + Biber
+- GB/T 7714—2015 `biblatex` 样式
 - 正文与中文主字体：仿宋 `FangSong`
 - 无衬线字体：黑体 `SimHei`
-- 等宽字体：仿宋 `FangSong`
-- 仿宋字体文件：Windows `simfang.ttf`
+- 构建入口：`python code/export/run_export.py --version v0.3 --source current --format latex`
+- 中间目录：`tmp/latex-build/v0.3/`
+- 输出目录：`output/exports/v0.3/`
 
-## 关键宏包
+## 2026-07-13 当前状态
 
-`ctexbook`、`amsmath`、`amssymb`、`mathtools`、`graphicx`、`booktabs`、`longtable`、`tabularx`、`xltabular`、`adjustbox`、`listings`、`hyperref`、`biblatex`、`newunicodechar`。
+1. v0.2 成功 manifest 记录的 TeX Live 2026 路径 `C:/texlive/2026` 当前不存在。
+2. 系统只发现 `D:/Program Files/MiKTeX/`，但该安装未完成首次初始化，当前无法构建或使用其 Poppler 工具。
+3. 不得把当前状态记录为“构建成功”。v0.3 第一次正文试点前必须恢复可用的 XeLaTeX、latexmk 和 Biber，并记录实际版本、路径和宏包状态。
+4. 工具链恢复后先编译未改正文的 v0.3 基线，再进行 GB/T 7714 样式试编译，确认中文参考文献、DOI、URL 和代码仓库条目排版正常。
 
-## 构建与质量记录
+## 首次可用性验收
 
-- 章节源：`docs/report/latex/current/`
-- 构建中间文件：`tmp/latex-build/v0.2/`
-- 发布 PDF：`output/exports/v0.2/embodied-intelligence-report-v0.2.pdf`
-- 构建清单：`output/exports/v0.2/latex-build-manifest.json`
-- 质量检查：横向溢出 `Overfull \\hbox = 0`；原始 LaTeX 控制序列 `0`；本机绝对路径残留 `0`。
-- 允许保留的提示：少量 `Underfull \\hbox` 仅作为断行提示记录，不得伴随横向溢出或内容缺失。
+- `latexmk -xelatex -halt-on-error -file-line-error` 可运行。
+- Biber 可运行，`gb7714-2015` 样式可加载。
+- 仿宋、黑体和等宽代码字体可找到。
+- 基线 PDF 构建成功，manifest 记录真实工具版本和输出哈希。
+- `latex_quality_check.py`、页面渲染和文本残留扫描通过。

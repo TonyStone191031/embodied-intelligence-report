@@ -16,6 +16,7 @@
 2. [当前详细大纲](D:/Projects/embodied-intelligence-report/docs/planning/current/具身智能报告-当前详细大纲.md)
 3. [当前版本修订计划](D:/Projects/embodied-intelligence-report/docs/planning/current/当前版本修订计划.md)
 4. [当前工作清单](D:/Projects/embodied-intelligence-report/docs/planning/current/当前工作清单.md)
+5. [v0.3 证据与资产规划](D:/Projects/embodied-intelligence-report/docs/planning/current/v0.3-证据与资产规划.md)
 
 ## 使用规则
 
