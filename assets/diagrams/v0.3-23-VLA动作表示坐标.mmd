@@ -1,0 +1,15 @@
+flowchart LR
+  A["观测/语言/本体状态"]
+  B["离散路线<br/>逐维或 FAST token"]
+  C["连续路线<br/>回归/diffusion/flow"]
+  D["动作块 H 步"]
+  E["执行前 h 步"]
+  F["低层控制与安全过滤"]
+  G["新观测与失败回流"]
+  A --> B
+  A --> C
+  B --> D
+  C --> D
+  D --> E
+  E --> F
+  F --> G

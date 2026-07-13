@@ -1,0 +1,191 @@
+\chapter{动力学、接触与柔顺控制}
+\label{chap:dynamics-contact-compliance}
+
+\section{学习目标、前置知识与问题边界}
+
+读完本章，读者应能从机械臂的能量出发写出关节空间动力学，解释接触互补条件和摩擦锥的物理意义，推导任务空间阻抗控制律，并把一项柔顺插装任务拆成观测、控制、阈值与恢复四个相互独立的设计问题。前置知识是第 5 章中的齐次变换、雅可比矩阵和速度映射。本章不把“接触成功”归因于某一个控制器：孔位估计错误、工件公差、末端标定、传感延迟和恢复策略都可能决定结果。
+
+刚性自由空间轨迹跟踪要求机器人逼近给定位置；接触操作则要求机器人在几何不确定时限制交互力。二者的差别不是“是否加一个力传感器”，而是受控对象从位姿误差扩展为机器人与环境组成的耦合动力系统。Hogan 的阻抗控制把目标写成力与运动之间的动态关系，而不是把位置或力之一孤立地设为唯一输出\cite{hogan1985impedance}；Khatib 的操作空间公式进一步给出了任务坐标中的惯量和力映射\cite{khatib1987operational}。
+
+\section{从能量到关节空间动力学}
+
+设 $q\in\mathbb{R}^{n}$ 为关节位置，$\dot q$、$\ddot q$ 分别为速度和加速度。机械臂的动能和势能写为
+\begin{equation}
+T(q,\dot q)=\frac{1}{2}\dot q^\top M(q)\dot q,\qquad V(q),
+\end{equation}
+其中 $M(q)$ 是对称正定惯量矩阵。对拉格朗日量 $L=T-V$ 应用 Euler--Lagrange 方程，可得
+\begin{equation}
+M(q)\ddot q+C(q,\dot q)\dot q+g(q)+\tau_f
+=\tau+J_c(q)^\top\lambda .
+\label{eq:joint-dynamics}
+\end{equation}
+$\tau$ 是执行器力矩，$g(q)=\partial V/\partial q$，$\tau_f$ 汇集关节摩擦等未建模项，$J_c^\top\lambda$ 把接触点的广义力映射到关节空间。$C$ 的矩阵表示不是唯一的，但应满足 $\dot M-2C$ 反对称；该性质使无耗散、无外力系统的能量变化与输入功率一致，是许多稳定性推导的关键\cite{featherstone2008rigid,lynch2017modern}。
+
+式中各项的量纲都必须是力矩：$M\ddot q$ 是产生关节加速度所需的惯性力矩，$C\dot q$ 汇集由速度引起的科氏与离心力矩，$g$ 抵消重力，$\tau_f$ 表示摩擦和传动损失。接触项来自虚功等价：接触点虚位移满足 $\delta x_c=J_c\delta q$，外力做功
+\begin{equation}
+\delta W=\lambda^\top\delta x_c
+=\lambda^\top J_c\delta q
+=(J_c^\top\lambda)^\top\delta q,
+\end{equation}
+所以与接触力等价的关节广义力必为 $J_c^\top\lambda$。这也解释了为什么末端力传感器读数不能直接加到关节力矩上：必须先统一坐标系、符号和力矩参考点，再乘雅可比转置。
+
+反对称性质还给出一个有用的能量检查。令机械能 $E=T+V$，把式\eqref{eq:joint-dynamics}左乘 $\dot q^\top$，利用 $\dot q^\top(\dot M-2C)\dot q=0$，可得
+\begin{equation}
+\dot E=\dot q^\top\tau+(J_c\dot q)^\top\lambda-\dot q^\top\tau_f.
+\label{eq:robot-power-balance}
+\end{equation}
+右侧依次是执行器输入功率、环境通过接触注入的功率和摩擦耗散。仿真器若在无输入、无接触、无摩擦时让 $E$ 持续增长，通常意味着积分器、$C$ 的实现或坐标变换存在错误。
+
+式\eqref{eq:joint-dynamics}对应三类计算。逆动力学已知 $(q,\dot q,\ddot q)$ 求 $\tau$，用于前馈补偿；正动力学已知 $(q,\dot q,\tau)$ 求 $\ddot q$，用于仿真和预测；参数辨识则由多段运动和力矩数据估计质量、质心、惯量及摩擦参数。三者不能混用：一个能在低速轨迹上拟合力矩的模型，未必能预测碰撞冲量，因为后者还依赖接触几何、恢复系数和采样时间。
+
+\subsection{二连杆算例：耦合项如何进入控制}
+
+对平面二连杆，若忽略摩擦，惯量矩阵可写成
+\begin{equation}
+M(q)=\begin{bmatrix}
+a+2b\cos q_2 & d+b\cos q_2\\
+d+b\cos q_2 & d
+\end{bmatrix},
+\end{equation}
+其中 $a,d$ 由连杆质量、长度和转动惯量组成，$b=m_2l_1l_{c2}$。取 $a=3.2$、$b=0.6$、$d=0.5\ \mathrm{kg\,m^2}$，当 $q_2=0$ 时
+$M=\left[\begin{smallmatrix}4.4&1.1\\1.1&0.5\end{smallmatrix}\right]$；当 $q_2=\pi/2$ 时变为
+$M=\left[\begin{smallmatrix}3.2&0.5\\0.5&0.5\end{smallmatrix}\right]$。同一关节加速度命令在不同姿态需要不同力矩。只使用常数增益而没有模型补偿时，姿态改变会表现为响应速度和超调变化；这不是神经网络特有的“分布偏移”，而是机械系统本身的构型依赖。
+
+例如忽略 $C$ 与 $g$，要求 $\ddot q=[1,0]^\top\ \mathrm{rad/s^2}$，伸直姿态需要惯性力矩 $[4.4,1.1]^\top\ \mathrm{N\,m}$，而 $q_2=\pi/2$ 时只需 $[3.2,0.5]^\top\ \mathrm{N\,m}$。第二关节虽然没有加速度，仍因非对角项收到 $1.1$ 或 $0.5\ \mathrm{N\,m}$；这就是动态耦合。真实逆动力学还必须把 $C\dot q$、$g$ 和期望接触力加入，算例只隔离惯量项。
+
+\section{单边接触、摩擦与混合动力学}
+
+令 $\phi(q)$ 为两物体的法向间隙，$\phi>0$ 表示分离，$\phi=0$ 表示接触。刚性、不可穿透接触的理想化法向条件是
+\begin{equation}
+0\leq \lambda_n\ \perp\ \phi(q)\geq 0,
+\label{eq:complementarity}
+\end{equation}
+即 $\lambda_n\geq0$、$\phi\geq0$ 且 $\lambda_n\phi=0$。它排除了“尚未接触却产生推力”和“接触时仍相互穿透”两种状态。切向力满足库仑摩擦锥
+\begin{equation}
+\|\lambda_t\|_2\leq \mu\lambda_n.
+\label{eq:friction-cone}
+\end{equation}
+严格位于锥内可以粘着；达到边界后可能滑动，方向与相对切向速度相反。数值算法常把圆锥多面体化以转成线性互补问题，但边数越少，摩擦方向误差越大。
+
+互补式只允许两种法向模式：分离时 $\phi>0,\lambda_n=0$；承压接触时 $\phi=0,\lambda_n\ge0$。$\phi=0,\lambda_n=0$ 是即将建立或断开的边界状态，而 $\phi>0,\lambda_n>0$ 和 $\phi<0$ 都不合法。摩擦锥还要结合切向速度理解：$\|\lambda_t\|<\mu\lambda_n$ 时，约束求解器可以选择足以阻止滑动的切向力；到锥面时，若仍有相对运动，摩擦方向与切向速度相反。式\eqref{eq:friction-cone}给的是可行集合，不是独立计算 $\lambda_t$ 的控制律。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{v0.3-06-接触互补与摩擦锥.pdf}
+\caption{法向互补的合法/非法状态与库仑摩擦锥截面。作者依据刚性接触模型绘制；图为概念解释，不是实验数据\cite{featherstone2008rigid,lynch2017modern}。}
+\label{fig:contact-complementarity-friction}
+\end{figure}
+
+接触建立或断开会改变约束集合，碰撞还会使速度发生跃迁。因此接触操作是混合系统：连续阶段用式\eqref{eq:joint-dynamics}演化，离散事件更新接触模式或施加冲量。柔顺材料和有限采样控制器常用罚函数 $\lambda_n=k_p[-\phi]_++d_p[-\dot\phi]_+$ 近似接触；它容易实现，却把允许穿透量、刚度和积分步长绑定在一起。减小步长并不自动消除模型偏差，增大刚度也可能造成数值发散。
+
+\begin{table}[H]
+\centering
+\caption{接触建模选择及其代价}
+\label{tab:contact-models}
+\begin{tabularx}{\textwidth}{p{0.18\textwidth}YYY}
+\toprule
+方法 & 主要变量 & 优点 & 典型失效\\
+\midrule
+刚性互补 & 间隙、接触力/冲量 & 不允许静态穿透，接触逻辑明确 & 求解不光滑，多接触时计算昂贵\\
+罚函数 & 穿透量、相对速度 & 易并入常微分方程和自动微分 & 刚度与步长耦合，参数缺乏真实对应\\
+可变形接触 & 形变场或局部材料参数 & 能表示软物体和接触斑 & 参数多，识别与实时计算困难\\
+数据驱动残差 & 解析模型加学习修正 & 可补偿稳定的系统误差 & 外推不可控，不能替代不可穿透约束\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{从关节力矩到任务空间阻抗}
+
+末端速度满足 $\dot x=J(q)\dot q$。忽略奇异点并选定任务子空间后，操作空间惯量为
+\begin{equation}
+\Lambda(q)=\left(JM^{-1}J^\top\right)^{-1}.
+\label{eq:operational-inertia}
+\end{equation}
+$\Lambda$ 说明同一笛卡尔方向在不同姿态呈现不同“等效质量”。若希望位姿误差 $e=x-x_d$ 在外力 $F_{ext}$ 下满足
+\begin{equation}
+M_d\ddot e+D_d\dot e+K_de=F_{ext},
+\label{eq:desired-impedance}
+\end{equation}
+则最简任务空间弹簧--阻尼力为 $F_c=-K_de-D_d\dot e$，再经 $\tau=J^\top F_c+C\dot q+g$ 映射到关节。完整的操作空间控制还应补偿 $\Lambda$、任务空间科氏/重力项，并处理零空间任务\cite{khatib1987operational}。
+
+式\eqref{eq:operational-inertia}可以从关节加速度关系看出。暂忽略 $\dot J\dot q$、重力和科氏项，若关节力矩由任务力产生，$\tau=J^\top F$，则 $\ddot x=JM^{-1}J^\top F=\Lambda^{-1}F$，因此 $F=\Lambda\ddot x$。当 $J$ 行满秩时该逆存在；接近奇异位形时，某些方向的等效惯量会急剧增大，直接求逆放大噪声。工程实现通常采用阻尼伪逆、限制任务方向或避开奇异区，而不是假定公式在所有构型都数值良好。
+
+阻抗控制给定位移到力的映射；导纳控制则测量外力，再由虚拟动力学积分得到位置或速度命令。高带宽力矩接口常适合外环阻抗，只有位置接口的工业机械臂更常用导纳外环。两者的稳定性都受环境刚度、采样延迟和内环动态影响\cite{deschutter1997force}。“把 $K_d$ 调低就安全”并不成立：过软会造成定位误差和长时间摩擦，过低阻尼会在接触切换时振荡。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{v0.3-06-阻抗与导纳接口.pdf}
+\caption{阻抗与导纳的信号方向和执行器接口。作者依据经典力控制分类绘制\cite{hogan1985impedance,deschutter1997force}。}
+\label{fig:impedance-admittance-interface}
+\end{figure}
+
+图\ref{fig:impedance-admittance-interface}中的差别决定代码落点。阻抗外环从位置/速度误差计算期望交互力或关节力矩，依赖可控力矩接口；导纳外环从测得外力积分出新的位置/速度命令，可包在厂商位置伺服器之外。后者并不天然更稳定：力传感噪声会被积分，位置内环延迟又会改变虚拟质量、阻尼和环境刚度组成的闭环极点。
+
+\subsection{一维参数算例}
+
+设期望接触方向的虚拟质量 $m_d=2\ \mathrm{kg}$、刚度 $k_d=800\ \mathrm{N/m}$。临界阻尼为 $d_d=2\sqrt{m_dk_d}=80\ \mathrm{N\,s/m}$，固有频率 $\omega_n=\sqrt{k_d/m_d}=20\ \mathrm{rad/s}$。若环境位置误差为 $2\ \mathrm{mm}$，静态弹簧力约为 $1.6\ \mathrm{N}$；若标定误差增至 $10\ \mathrm{mm}$，则为 $8\ \mathrm{N}$。控制律没有改变，但几何误差把交互力放大了五倍。这就是为什么接触控制章节必须同时讨论标定、阈值和回退。
+
+\section{官方实现导读：方程如何落到实时回调}
+
+libfranka 0.15.0 的官方示例在 1 个实时回调中读取科氏项、末端雅可比和关节速度，构造弹簧--阻尼任务力矩，并把科氏补偿相加\cite{libfranka015}。以下片段保留其关键计算，省略连接、姿态误差和异常处理：
+
+\begin{lstlisting}[language=C++,caption={libfranka 0.15.0 笛卡尔阻抗示例的关键力矩计算（Apache-2.0）}]
+auto coriolis_array = model.coriolis(robot_state);
+auto jacobian_array = model.zeroJacobian(
+    franka::Frame::kEndEffector, robot_state);
+Eigen::Map<const Eigen::Matrix<double, 7, 1>>
+    coriolis(coriolis_array.data());
+Eigen::Map<const Eigen::Matrix<double, 6, 7>>
+    jacobian(jacobian_array.data());
+Eigen::Map<const Eigen::Matrix<double, 7, 1>>
+    dq(robot_state.dq.data());
+tau_task = jacobian.transpose()
+         * (-stiffness * error - damping * (jacobian * dq));
+tau_d = tau_task + coriolis;
+\end{lstlisting}
+\sourceanchor{仓库 \texttt{frankarobotics/libfranka}；tag \texttt{0.15.0}；文件 \texttt{examples/cartesian\_impedance\_control.cpp}；许可证 Apache-2.0；符号 \texttt{impedance\_control\_callback}。}
+
+代码与式\eqref{eq:desired-impedance}之间存在三个值得检查的差异。第一，示例明确“不做惯量整形”，所以 $M_d$ 不是任意指定的常数矩阵；实际闭环惯量随构型变化。第二，示例的旋转误差由四元数构造，不能把欧氏角度误差原样复制。第三，官方文档警告该示例把碰撞阈值设得较高，并要求操作者握住急停。示例能解释算法，不等于通过生产安全验证。
+
+\section{完整案例：带搜索与回退的柔顺插装}
+
+考虑圆柱销插入孔。已知末端标称孔位 $\hat x_h$，但横向误差可能达到 $\pm2\ \mathrm{mm}$；六维力/力矩传感器提供 $w=[f_x,f_y,f_z,m_x,m_y,m_z]$。任务不是“沿 $z$ 轴下降”，而是一个带观测判据的状态机：
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{v0.3-06-柔顺插装闭环.png}
+\caption{柔顺插装的观测、控制与异常恢复链。作者自绘；概念依据为阻抗/力控制文献\cite{hogan1985impedance,deschutter1997force}，不复制论文原图。}
+\label{fig:compliant-insertion-loop}
+\end{figure}
+
+\begin{enumerate}
+  \item \textbf{接近：}在自由空间移动到孔上方，限制速度和动能；检查视觉置信度、工具标定版本和工件是否到位。
+  \item \textbf{探触：}沿 $-z$ 低速移动。当 $f_z>f_{contact}$ 持续 $N$ 个采样周期时确认接触，避免单点噪声触发。
+  \item \textbf{搜索：}保持法向期望力或低法向刚度，在 $xy$ 平面执行螺旋/栅格微动；横向力和力矩用于判断卡边。
+  \item \textbf{插入：}检测到 $z$ 位移增加且横向力下降后，切换到较高横向刚度和受限轴向速度。
+  \item \textbf{验证：}以深度、末端残余力和工件存在信号共同判定成功；单一位置阈值可能把工件变形误判为到位。
+  \item \textbf{回退：}若 $\|f_{xy}\|>f_{jam}$、$|m_{xy}|>m_{jam}$ 或搜索超时，立即停止下压，沿已知安全方向撤回，重新观测孔位；重复次数超过上限则转人工。
+\end{enumerate}
+
+\begin{lstlisting}[language=Python,caption={教学伪代码：插装状态机；非任何厂商源码}]
+while not terminal:
+    wrench = low_pass(read_wrench())
+    if state == APPROACH:
+        command_pose(pre_insert)
+    elif state == TOUCH and persistent(wrench.fz > f_contact, N):
+        state = SEARCH
+    elif state == SEARCH:
+        command_impedance(spiral_xy(), vz=-v_probe, K=K_search)
+        if insertion_signature(depth, wrench): state = INSERT
+        if jam(wrench) or timeout(): state = RETRACT
+    elif state == RETRACT:
+        stop_downward_motion(); retract(); reacquire_hole()
+\end{lstlisting}
+
+这段伪代码故意把控制命令与判据分开。$f_{contact}$、$f_{jam}$ 和滤波窗口不能凭经验永久写死：它们需要由传感器噪声、正常接触分布、工件公差和允许风险共同标定。部署日志至少应保存原始/滤波力、位姿、状态转换原因、控制器参数和失败图像，否则失败样本无法回流到几何估计或策略训练。
+
+\section{知识小结与综述判断}
+
+\textbf{知识小结。}关节空间动力学把执行器力矩、惯性、科氏/离心、重力和接触广义力置于同一方程；单边接触由间隙、法向力和互补条件描述，摩擦锥区分粘着与滑动；任务空间惯量说明末端方向上的动态响应随构型变化；阻抗与导纳控制分别规定运动--力关系及力到运动的外环映射。柔顺插装需要状态机、阈值和恢复链，不能只给出一条控制方程。
+
+\authorjudgement{经典阻抗和操作空间理论仍是接触操作的主干，不是等待被 VLA 淘汰的“传统模块”。学习策略最有价值的切入点通常是难以建模的搜索轨迹、接触状态估计和参数调节；安全力限、实时内环、急停与确定性回退仍应由可验证的控制层承担。若一项工作只报告成功率而不报告接触力、超时、卡死和人工恢复，它不足以证明接触操作能力。}

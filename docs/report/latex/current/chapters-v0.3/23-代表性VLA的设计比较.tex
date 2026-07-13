@@ -1,0 +1,210 @@
+\chapter{代表性 VLA 的设计比较}
+\label{chap:vla-design-comparison}
+
+\section{问题设定：比较的是闭环策略，不是模型名气}
+
+视觉--语言--动作模型（Vision--Language--Action, VLA）把观测 $o_t$、语言条件 $l$、本体状态 $s_t$ 映射为动作或动作块。统一写成
+\begin{equation}
+a_{t:t+H-1}\sim\pi_\theta(\,\cdot\mid o_{t-k:t},s_{t-k:t},l\,),
+\label{eq:vla-policy}
+\end{equation}
+其中 $H$ 是预测动作块长度，$k$ 是历史窗口。式\eqref{eq:vla-policy}隐藏了会直接改变系统行为的六个选择：动作坐标系、动作分布族、时间离散、解码次数、执行多少步后重规划，以及低层控制器如何跟踪动作。只比较参数量或论文成功率会把这些差异抹平。
+
+RT-1 证明了大规模多任务真机数据与高容量序列模型可以形成可扩展的机器人策略\cite{brohan2022rt1}；RT-2 进一步把动作表示并入 VLM 的 token 输出空间\cite{brohan2023rt2}。但“把动作写成 token”只是一个设计分支。Diffusion Policy 和 Octo 直接建模连续动作分布\cite{chi2023diffusion,octo2024}，$\pi_0$ 使用 flow matching\cite{black2024pi0}，GR00T N1 则把视觉语言推理与 diffusion transformer 动作模块组织成双系统\cite{nvidia2025groot}。
+
+\section{动作表示的四种基本路线}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{v0.3-23-VLA动作表示坐标.png}
+\caption{动作表示、动作块与低层闭环之间的关系。作者依据 RT-2、Diffusion Policy、FAST 与 $\pi_0$ 的公开方法改绘\cite{brohan2023rt2,chi2023diffusion,pertsch2025fast,black2024pi0}。}
+\label{fig:vla-action-design-space}
+\end{figure}
+
+\subsection{逐维回归：快，但容易把多峰行为平均掉}
+
+若策略输出高斯均值，常用目标为
+\begin{equation}
+\mathcal L_{\mathrm{MSE}}=\mathbb E\|a_t-f_\theta(o_t,s_t,l)\|_2^2.
+\end{equation}
+它只需一次前向传播，适合低延迟控制；但当绕障可以向左也可以向右、抓取存在多个等价姿态时，条件均值可能落在两种可行动作之间。Mixture Density、离散 latent 或生成式动作头的目的，不是“让模型更大”，而是恢复条件动作分布的多峰结构。
+
+这个结论可以直接从损失函数得到。对固定条件 $c=(o_t,s_t,l)$，把标量输出记为 $y$，则
+\begin{equation}
+\frac{\partial}{\partial y}\,\mathbb E[(a-y)^2\mid c]
+=2\left(y-\mathbb E[a\mid c]\right),
+\end{equation}
+所以平方误差的最优点估计必为条件均值 $y^*=\mathbb E[a\mid c]$。若演示者以相同概率选择 $a=-1$ 和 $a=+1$，两种动作都可行，回归器却会输出 $0$。在绕障任务中，$0$ 可能恰好指向障碍物；这不是训练不足，而是“单峰点估计”与“多峰决策”之间的结构冲突。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{v0.3-23-回归多峰平均.pdf}
+\caption{平方误差把双峰动作分布压成条件均值的教学示意。曲线为作者生成的合成分布，不是论文实验结果。}
+\label{fig:regression-mode-averaging}
+\end{figure}
+
+\subsection{离散动作 token：复用语言模型目标，但量化不是免费的}
+
+将归一化动作 $a^{(j)}\in[-1,1]$ 均匀量化为 $B$ 个区间，
+\begin{equation}
+z^{(j)}=\operatorname{clip}\!\left(\left\lfloor\frac{a^{(j)}+1}{2}B\right\rfloor,0,B-1\right),
+\qquad
+\hat a^{(j)}=-1+\frac{2z^{(j)}+1}{B}.
+\label{eq:uniform-action-token}
+\end{equation}
+于是训练可复用自回归交叉熵。RT-1 采用离散动作 token；RT-2 和 OpenVLA 让动作 token 与语言 token 共处输出词表\cite{brohan2022rt1,brohan2023rt2,kim2024openvla}。优势是训练基础设施成熟、输出概率可解释；代价是每个维度/时刻都占 token，量化误差与序列长度随控制维度和频率上升。
+
+令分箱宽度 $\Delta=2/B$。若用箱中心解码且动作未被裁剪，单维最大量化误差为 $\Delta/2=1/B$；$B=256$ 时归一化误差上界约为 $0.0039$。这个数字必须乘回各维物理量程：同一归一化误差，对 $\pm1$ rad 的关节角与 $\pm0.1$ m 的位移不是同一控制误差。动作块含 $H$ 个时刻、每时刻有 $D$ 个独立离散维度时，朴素自回归序列长为 $DH$；例如 $D=7,H=50$ 就是 350 个动作 token。量化精度、解码延迟和上下文占用因此构成三方权衡。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.94\textwidth]{v0.3-23-动作token量化.pdf}
+\caption{均匀动作分箱的阶梯解码与误差。作者依据 OpenVLA 的动作 tokenizer 逻辑绘制\cite{kim2024openvla,openvla2024code}；图中使用 $B=8$ 仅为放大展示量化效应。}
+\label{fig:action-token-quantization}
+\end{figure}
+
+FAST 指出逐维逐时刻分箱在高频灵巧动作上表现不佳，因而先对动作块做离散余弦变换，再对频域系数编码；FAST+ 在多机器人动作轨迹上学习通用 tokenizer\cite{pertsch2025fast}。这揭示了一个更一般的原则：动作 tokenizer 应利用时间相关性，而不是把每个采样点当作相互独立的“词”。
+
+\subsection{扩散动作：表达多峰分布，以迭代换取计算}
+
+令 $A^0=a_{t:t+H-1}$ 为干净动作块，前向过程加噪得到
+\begin{equation}
+A^\tau=\sqrt{\bar\alpha_\tau}A^0+\sqrt{1-\bar\alpha_\tau}\epsilon,
+\qquad \epsilon\sim\mathcal N(0,I),
+\end{equation}
+噪声预测目标为
+\begin{equation}
+\mathcal L_{\mathrm{diff}}=
+\mathbb E_{A^0,\tau,\epsilon}
+\left\|\epsilon-\epsilon_\theta(A^\tau,\tau,o,s,l)\right\|_2^2.
+\label{eq:diffusion-loss}
+\end{equation}
+推理从高斯噪声开始迭代去噪。Diffusion Policy 把这一过程与视觉条件、时间序列动作块和滚动时域执行结合，在其 12 项任务/4 组 benchmark 的实验集合中报告相对既有方法平均提升 46.9\%\cite{chi2023diffusion}。该数值不能直接与 OpenVLA 或 Gemini Robotics 的不同任务成功率相减。
+
+训练和推理方向不能混为一谈。训练时先从数据集取干净动作 $A^0$，随机采样噪声等级 $\tau$ 和高斯噪声 $\epsilon$，只需构造一个带噪样本并回归噪声；推理时没有 $A^0$，必须从随机噪声出发，按噪声日程多次调用网络。不同随机初值可以收敛到不同动作模式，因此它能保留图\ref{fig:regression-mode-averaging}中被均值回归抹掉的选择。Diffusion Policy 还采用滚动时域：预测一段、执行前若干步、再用新观测重算；原论文 Fig.~3 把这件事与视觉条件去噪网络并列呈现\cite{chi2023diffusion}。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{v0.3-23-扩散动作生成.pdf}
+\caption{扩散动作的训练加噪与推理去噪方向。作者根据 Diffusion Policy 的方法与原论文 Fig.~1、Fig.~3 重新组织绘制\cite{chi2023diffusion}，不复制原图像素；轨迹为教学示意。}
+\label{fig:diffusion-action-generation}
+\end{figure}
+
+Octo 采用 Transformer 主干和 diffusion readout，重点不是单一动作空间上的最高分，而是让不同相机、本体状态、任务条件和动作头以模块化 token group 接入，并在目标域小数据上微调\cite{octo2024}。扩散的工程代价是一次动作块需要多次网络评估；若动作块执行期间不重规划，快速生成并不等于快速闭环。
+
+\subsection{流匹配：学习速度场，仍需数值积分}
+
+取噪声 $A^0\sim\mathcal N(0,I)$、数据动作 $A^1\sim p_{data}$，线性概率路径
+\begin{equation}
+A^\tau=(1-\tau)A^0+\tau A^1,\qquad
+u_\tau=A^1-A^0.
+\end{equation}
+流匹配训练速度场 $v_\theta$：
+\begin{equation}
+\mathcal L_{\mathrm{FM}}=
+\mathbb E\left\|v_\theta(A^\tau,\tau,o,s,l)-u_\tau\right\|_2^2.
+\label{eq:flow-matching}
+\end{equation}
+推理时积分 $dA/d\tau=v_\theta(A,\tau,\cdot)$。$\pi_0$ 在预训练 VLM 上接入 flow-matching 动作专家，以连续动作块覆盖单臂、双臂和移动操作平台\cite{black2024pi0}。与扩散相比，流匹配可使用较直接的常微分方程路径，但延迟仍取决于积分步数、主干缓存和硬件，不能由“flow”一词推断为单步控制。
+
+具体地，以 $N$ 步显式 Euler 积分为例，$\Delta\tau=1/N$，
+\begin{equation}
+A_{i+1}=A_i+\Delta\tau\,v_\theta(A_i,\tau_i,o,s,l),
+\qquad i=0,\ldots,N-1.
+\label{eq:flow-euler}
+\end{equation}
+每一步都要在当前动作状态重新估计速度。$\pi_0$ 的公开论文实现以 PaliGemma 视觉语言主干配合约 300M 参数的动作专家，预测 $H=50$ 的动作块，并在所述实验中以 10 个 Euler 步完成积分\cite{black2024pi0}。其块状因果注意力允许视觉语言前缀被缓存，动作专家则在不同积分步更新；因此“10 步”不等于把整个大主干完整运行 10 次，但也绝不是一次前向传播。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{v0.3-23-流匹配动作生成.pdf}
+\caption{流匹配的训练速度场与 Euler 推理。作者依据 $\pi_0$ 的 flow-matching 动作专家改绘\cite{black2024pi0}；路径为二维教学投影。}
+\label{fig:flow-matching-action-generation}
+\end{figure}
+
+\section{动作块与闭环：$H$ 大不等于长时程智能}
+
+预测 $H$ 步动作块能减少视觉主干调用并让动作在时间上连贯。部署时通常只执行前 $h\le H$ 步，再用新观测重规划。$h=H$ 接近开环动作块，延迟低但对扰动迟钝；$h=1$ 闭环最紧，但计算和通信压力最大。合理选择依赖三个时间尺度：相机/状态更新频率、VLA 推理时间和低层控制周期。
+
+例如 50 Hz 动作数据、$H=50$ 表示 1 秒动作块。若模型用 200 ms 生成一次并执行前 10 步，则重规划周期为 200 ms；若执行全部 50 步，模型虽能提前 800 ms 空闲，却可能在物体被移动后继续执行旧动作。论文若只写“输出 50-step chunk”而不报告 $h$、推理延迟、低层跟踪和观测新鲜度，读者无法判断闭环能力。
+
+\section{主干与动作头如何分工}
+
+PaLM-E 把图像、连续状态估计和文本编码交错输入语言模型，证明具身传感可以进入大型多模态主干，但其代表性机器人任务更多落在具身推理和规划，并不等价于一个高频低层控制策略\cite{driess2023palme}。RT-2 则明确把动作写入 VLM 输出空间，使网页语义预训练与机器人控制共同训练\cite{brohan2023rt2}。这一区分阻止了常见误写：不能因为模型“看见机器人并输出计划”就把它归为直接动作 VLA。
+
+RT-1 的输入端以 EfficientNet 提取图像特征，并用 FiLM 接入语言条件；TokenLearner 压缩视觉 token 后，Transformer 按时间建模并输出离散动作。RT-2 改变的关键并非“再加一层 Transformer”，而是把机器人动作写进 VLM 的文本化输出空间，以网页视觉语言任务与机器人轨迹共同训练。PaLM-E 则把连续传感编码成与文本 token 同维的嵌入插入语言模型，更适合作为“感知信息如何进入具身推理主干”的代表。三者都使用 Transformer，但输入组织、监督目标和控制责任不同。
+
+OpenVLA 组合 DINOv2 与 SigLIP 视觉特征、Llama 2 语言主干和离散动作输出，在 970k 真实机器人示范上训练；论文报告其 7B 模型在指定 29 项任务设置中相对 RT-2-X 的绝对成功率优势，以及相对从头训练 Diffusion Policy 的目标域微调优势\cite{kim2024openvla}。这些结果支持其设计在该评测协议下有效，不支持“7B 普遍优于 55B”这种脱离数据与动作接口的结论。
+
+OpenVLA 中，DINOv2 偏向局部视觉表征，SigLIP 提供视觉--语言对齐特征，两路特征拼接后经投影器送入 Llama 2；动作再由语言模型词表末端的一组 token 自回归产生。于是视觉编码器回答“看到了什么”，投影器解决维度/分布接口，语言主干融合指令与图像上下文，ActionTokenizer 才负责连续控制量的编解码。任何一层冻结或微调，都会改变数据需求与部署代价，不能用“Llama 2 输出动作”一句话概括。
+
+\subsection{Octo：模块化不是一句“可扩展”}
+
+Octo 的主干输入由若干 \emph{token group} 组成：任务侧可以是语言或目标图像，观测侧可以包含多相机图像和本体状态。各自 tokenizer 先把异构输入变成统一宽度的 token，再由块状注意力掩码规定哪些组能相互读取。主干不直接把最后一个普通 token 当动作，而是加入专用 readout token；readout 汇聚上下文后连接 diffusion action head，产生连续动作块\cite{octo2024}。
+
+这种设计把“共享知识”和“本体接口”分开。迁移到新机器人时，可以增加新的观测 tokenizer 以接收力/力矩或不同相机，也可以替换动作 readout 以适配新的关节维度；共享 Transformer 仍提供从 25 个数据集、约 80 万段轨迹中学到的跨任务表征。它并不意味着零成本跨本体：新增模块仍需目标域数据训练，动作归一化、时间对齐和相机标定也必须重做。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{v0.3-23-Octo模块化架构.pdf}
+\caption{Octo 的模块化输入、Transformer 主干、readout 与动作头，以及目标域新增接口。作者依据 Octo 原论文 Fig.~2 改绘\cite{octo2024}，不复制原图像素。}
+\label{fig:octo-modular-architecture}
+\end{figure}
+
+GR00T N1 把 VLM System 2 与 diffusion transformer System 1 紧耦合并端到端训练，数据混合真实轨迹、人类视频和合成样本\cite{nvidia2025groot}。Gemini Robotics 报告直接控制 VLA；同一技术报告另设 Gemini Robotics-ER，负责空间/时间理解、指向、轨迹与抓取预测等具身推理能力\cite{gemini2025robotics}。二者都提供重要系统证据，但完整训练代码、数据和权重并未公开到足以复现论文主张的程度，开源程度必须与论文新颖性分开评价。
+
+\begin{table}[H]
+\centering
+\caption{代表性路线的统一设计比较；结果数值因任务与协议不同，不作横向排行榜}
+\label{tab:vla-design}
+\scriptsize
+\begin{tabularx}{\textwidth}{p{0.105\textwidth}p{0.14\textwidth}p{0.13\textwidth}p{0.13\textwidth}p{0.14\textwidth}Y}
+\toprule
+路线 & 主干/融合 & 动作表示 & 时序与闭环 & 开放证据 & 主要适用条件与限制\\
+\midrule
+RT-1 & EfficientNet/FiLM、TokenLearner、Transformer & 逐维离散 token & 短历史、实时逐步策略 & 论文与部分官方代码 & 单平台大规模多任务；语义主干不来自通用 VLM\\
+PaLM-E & 传感编码与文本 token 交错进 LLM & 以语言/规划输出为主 & 高层推理接口 & 论文，模型闭源 & 不能直接当作低层 VLA 基线\\
+RT-2 & VLM 与机器人数据共同训练 & 动作作为文本 token & VLA 直接控制 & 论文，主模型闭源 & 语义迁移强；量化、解码与闭环细节受实现约束\\
+Diffusion Policy & 视觉编码器+条件去噪网络 & 连续 diffusion chunk & receding horizon & 论文和官方代码 & 多峰连续动作；多步去噪增加延迟\\
+Octo & 模块化 Transformer & diffusion readout & chunk+目标域微调 & 论文、权重、代码 & 新观测/动作空间适配；规模小于大 VLM 路线\\
+OpenVLA & DINOv2+SigLIP+Llama 2 & 256-bin 离散 token & 自回归动作输出 & 论文、权重、MIT 代码 & 易复用语言模型栈；高频动作 token 长度和量化受限\\
+$\pi_0$ & 预训练 VLM+动作专家 & flow-matching chunk & 数值积分后滚动执行 & 论文、部分权重与 Apache-2.0 代码 & 灵巧连续动作；推理步数和跨本体适配仍需工程验证\\
+GR00T N1 & VLM System 2 + DiT System 1 & diffusion action & 双系统端到端 & 报告与开放模型范围 & 人形双臂；开放资产与论文全训练栈并非完全等价\\
+Gemini Robotics & Gemini 2.0 基础与机器人专用后训练 & 报告为直接连续控制 & 强调反应式闭环 & 技术报告，核心闭源 & 能力覆盖广；第三方复现与接口细节有限\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{真实源码导读：OpenVLA 的均匀动作分箱}
+
+OpenVLA 的 \texttt{ActionTokenizer} 清楚展示了式\eqref{eq:uniform-action-token}如何进入代码：先裁剪到动作范围，再逐维分箱，并把分箱编号映射到词表尾部的低频 token\cite{openvla2024code}。
+
+\begin{lstlisting}[language=Python,caption={OpenVLA ActionTokenizer 的关键路径（MIT；为节省篇幅删去类型与批处理分支）}]
+self.bins = np.linspace(min_action, max_action, self.n_bins)
+self.bin_centers = (self.bins[:-1] + self.bins[1:]) / 2.0
+
+action = np.clip(action, a_min=float(self.min_action),
+                 a_max=float(self.max_action))
+discretized_action = np.digitize(action, self.bins)
+token_ids = self.tokenizer.vocab_size - discretized_action
+
+discretized = self.tokenizer.vocab_size - action_token_ids
+discretized = np.clip(discretized - 1, 0,
+                      self.bin_centers.shape[0] - 1)
+actions = self.bin_centers[discretized]
+\end{lstlisting}
+\sourceanchor{仓库 \texttt{openvla/openvla}；许可证 MIT；文件 \texttt{prismatic/vla/action\_tokenizer.py}；符号 \texttt{ActionTokenizer}。当前只能核验 2026-07-13 的浮动 \texttt{main} 页面；因只读 HEAD SHA 查询未获权限，本试点不伪造 commit，正式冻结前必须替换为 immutable permalink。}
+
+代码暴露了三个模型图中不易看见的假设。第一，所有动作维统一裁剪到 $[-1,1]$，因此数据统计和反归一化是控制接口的一部分。第二，分箱边界有 256 个而中心只有 255 个，解码需要边界裁剪；“256 个 action token”不等于 256 个等宽可还原中心。第三，映射占用基础 tokenizer 词表末端 token，动作与语言共享词表是工程约定，不是物理上自然的表示。
+
+\section{如何读实验表：先校准任务，再看数字}
+
+跨论文比较至少检查五项：训练数据是否包含测试机器人；任务是 zero-shot、目标域微调还是从头训练；成功判据和试验次数；动作空间与控制频率；是否允许人工复位、重试或高层规划器。Octo 的官方评测覆盖 9 个真机 setup，并报告新力/力矩观测和新关节动作空间的微调\cite{octo2024}；OpenVLA 的 29 项任务、RT-1 的 700+ 数据采集任务与 Gemini Robotics 的能力演示不是同一统计总体。
+
+因此本章不制作“综合成功率排名”。可以比较的是同一论文内部的受控消融，例如 OpenVLA 的视觉特征组合、Octo 的数据/架构选择、Diffusion Policy 的滚动执行与时间序列设计；跨论文只能比较证据边界和接口属性。对闭源模型，作者视频可以证明某次演示发生过，却不能估计总体成功率或失败分布。
+
+\section{知识小结与综述判断}
+
+\textbf{知识小结。}离散 token 把连续动作转成语言模型可处理的分类目标，但引入量化与序列长度；扩散和流匹配能表达多峰连续动作，却需要迭代去噪或数值积分；action chunk 在时间一致性、推理摊销和闭环反应之间权衡。主干是否具备视觉语言知识、动作头是否承担低层控制、执行后何时重规划，是比模型参数量更有解释力的坐标。
+
+\authorjudgement{VLA 研究的核心竞争并不是“谁把最大的 VLM 接到机器人上”，而是谁能在语义泛化、动作分布表达、闭环频率、跨本体归一化和可复现评测之间形成可部署的组合。当前证据尚不足以宣告离散 token、diffusion 或 flow matching 中任何一种取得普遍胜利。对接触密集任务，VLA 最合理的输出通常是受约束动作块或技能参数，仍由第\ref{chap:dynamics-contact-compliance}章的实时控制、安全限幅和恢复状态机执行。}

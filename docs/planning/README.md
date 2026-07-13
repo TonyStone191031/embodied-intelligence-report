@@ -13,10 +13,13 @@
 ## 当前建议阅读顺序
 
 1. [项目工作规范](D:/Projects/embodied-intelligence-report/docs/planning/项目工作规范.md)
-2. [当前详细大纲](D:/Projects/embodied-intelligence-report/docs/planning/current/具身智能报告-当前详细大纲.md)
-3. [当前版本修订计划](D:/Projects/embodied-intelligence-report/docs/planning/current/当前版本修订计划.md)
-4. [当前工作清单](D:/Projects/embodied-intelligence-report/docs/planning/current/当前工作清单.md)
-5. [v0.3 证据与资产规划](D:/Projects/embodied-intelligence-report/docs/planning/current/v0.3-证据与资产规划.md)
+2. [章节写作质量与证据资产规范](D:/Projects/embodied-intelligence-report/docs/planning/章节写作质量与证据资产规范.md)
+3. [当前详细大纲](D:/Projects/embodied-intelligence-report/docs/planning/current/具身智能报告-当前详细大纲.md)
+4. [当前版本修订计划](D:/Projects/embodied-intelligence-report/docs/planning/current/当前版本修订计划.md)
+5. [当前工作清单](D:/Projects/embodied-intelligence-report/docs/planning/current/当前工作清单.md)
+6. [v0.3 证据与资产规划](D:/Projects/embodied-intelligence-report/docs/planning/current/v0.3-证据与资产规划.md)
+
+技能调用补充规则见[《项目工作规范》中的“skills 与质量门”](D:/Projects/embodied-intelligence-report/docs/planning/项目工作规范.md#10-skills-与质量门)：本项目规划和版本文件优先于 skill 默认流程；完整论文编排器默认不启动，按任务需要调用局部研究、引用和验证能力。
 
 ## 使用规则
 

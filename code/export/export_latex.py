@@ -57,6 +57,50 @@ def find_latexmk() -> tuple[str, Path | None]:
     )
 
 
+def configure_miktex_environment(
+    environment: dict[str, str], latexmk: str, version: str
+) -> dict[str, str]:
+    """Point MiKTeX at the disposable project-local user tree when available.
+
+    MiKTeX keeps user configuration, data, and on-the-fly packages outside the
+    repository by default.  That is inconvenient for reproducible report
+    builds and, in restricted environments, can fail before XeLaTeX starts.
+    The project-local tree is opt-in by existence: normal user installations
+    continue to use their standard MiKTeX roots when the directory is absent.
+    """
+    latexmk_path = Path(latexmk)
+    if "miktex" not in str(latexmk_path).lower():
+        return environment
+
+    project_root = ROOT / "tmp" / "miktex" / version
+    required = {
+        "MIKTEX_USERCONFIG": project_root / "config",
+        "MIKTEX_USERDATA": project_root / "data",
+        "MIKTEX_USERINSTALL": project_root / "install",
+    }
+    if not all(path.exists() for path in required.values()):
+        return environment
+
+    for key, path in required.items():
+        environment[key] = str(path)
+
+    # The system TEXMF tree is needed for binaries and fonts.  Keep the
+    # project user-install tree first so package versions are coherent.
+    miktex_system_root = latexmk_path.parent.parent.parent.parent
+    roots = [
+        required["MIKTEX_USERINSTALL"],
+        project_root / "user-roots",
+        miktex_system_root,
+    ]
+    environment["MIKTEX_USERROOTS"] = os.pathsep.join(
+        str(path) for path in roots if path.exists()
+    )
+    environment["PATH"] = os.pathsep.join(
+        [str(latexmk_path.parent), environment.get("PATH", "")]
+    )
+    return environment
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build a LaTeX report with XeLaTeX")
     parser.add_argument("--version", required=True)
@@ -100,6 +144,7 @@ def main() -> None:
             path_entries.append(str(perl_bin))
         path_entries.append(environment.get("PATH", ""))
         environment["PATH"] = os.pathsep.join(path_entries)
+    environment = configure_miktex_environment(environment, latexmk, args.version)
     result = subprocess.run(
         command,
         cwd=source_dir,
@@ -117,6 +162,16 @@ def main() -> None:
         "main_file": main_file.relative_to(ROOT).as_posix(),
         "command": command,
         "latexmk": latexmk,
+        "miktex_user_roots": {
+            key: environment[key]
+            for key in (
+                "MIKTEX_USERCONFIG",
+                "MIKTEX_USERDATA",
+                "MIKTEX_USERINSTALL",
+                "MIKTEX_USERROOTS",
+            )
+            if key in environment
+        },
         "returncode": result.returncode,
         "built_at_utc": datetime.now(timezone.utc).isoformat(),
         "log": log_path.relative_to(ROOT).as_posix() if log_path.exists() else None,

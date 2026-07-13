@@ -17,7 +17,8 @@
 \usepackage{newunicodechar}
 \usepackage{hyperref}
 \usepackage{url}
-\usepackage[backend=biber,style=authoryear]{biblatex}
+\providecommand{\ReportBibStyle}{authoryear}
+\usepackage[backend=biber,style=\ReportBibStyle]{biblatex}
 \addbibresource{references/references.bib}
 \AtBeginBibliography{\raggedright}
 
@@ -73,3 +74,7 @@
 
 \newcolumntype{Y}{>{\raggedright\arraybackslash}X}
 \graphicspath{{figures/}{../../../../assets/images/}{../../../../assets/diagrams/}}
+
+\newcommand{\evidencefact}[1]{\par\noindent\textbf{证据事实：}#1\par}
+\newcommand{\authorjudgement}[1]{\par\noindent\colorbox{black!6}{\parbox{0.94\linewidth}{\textbf{综述判断：}#1}}\par}
+\newcommand{\sourceanchor}[1]{\par\small\noindent\textit{源码锚点：}#1\par\normalsize}
