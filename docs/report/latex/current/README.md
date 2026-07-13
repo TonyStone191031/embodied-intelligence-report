@@ -1,6 +1,8 @@
 # v0.3 LaTeX 工作区
 
-这是 v0.3 的 LaTeX 主源目录，也是 v0.2 以后报告正文的唯一编辑源。当前章节文件仍保留 v0.2 冻结基线内容，供 v0.3 研究和迁移使用；在 v0.3 详细大纲获得明确批准前，不修改章节结构、不把旧正文声明为 v0.3 完成稿。
+这是 v0.3 的 LaTeX 主源目录，也是 v0.2 以后报告正文的唯一编辑源。v0.3 详细大纲已于 2026-07-13 获用户批准；第 6、23 章双试点已通过质量确认，其余章节仍按当前版本工作台分批迁移，未重写章节不得声明为 v0.3 完成稿。
+
+本文件只保存工作区命令和环境事实。权威任务路由见 [`AGENTS.md`](../../../../AGENTS.md)，长期 LaTeX 规则见[《项目工作规范》第 11 节](../../../planning/项目工作规范.md#11-latex-正文工作流v02)，当前批次见[《当前版本工作台》](../../../planning/current/当前版本工作台.md)。
 
 ## 源文件边界
 
@@ -28,6 +30,6 @@ python code/export/export_latex.py --version v0.3 --source frozen
 latexmk -xelatex -halt-on-error -file-line-error main.tex
 ```
 
-编译中间文件统一写入 `tmp/latex-build/v0.3/`，最终 PDF 写入 `output/exports/v0.3/`。当前机器的 TeX Live 2026 路径已缺失，首次 v0.3 构建前必须先按 `toolchain.md` 修复工具链。
+编译中间文件统一写入 `tmp/latex-build/v0.3/`，最终 PDF 写入 `output/exports/v0.3/`。当前使用项目级 MiKTeX 根目录；XeLaTeX、latexmk、Biber、GB/T 7714 样式和双试点构建已经验证。普通沙箱对 Windows 用户字体目录的访问限制及复现配置见 `toolchain.md`。
 
-工具链、字体和版本记录见同目录的 `toolchain.md`；工作规范见 `docs/planning/latex工作规范.md`。
+工具链、字体和版本记录见同目录的 `toolchain.md`。

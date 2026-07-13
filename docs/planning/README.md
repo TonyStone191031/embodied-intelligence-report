@@ -1,39 +1,31 @@
-# `docs/planning/` 目录说明
+# `docs/planning/` 导航
+
+本文件只提供导航，不承载项目规范。仓库唯一入口是 [`AGENTS.md`](../../AGENTS.md)，长期规则的唯一正文是[《项目工作规范》](项目工作规范.md)。
+
+## 权威顺序
+
+1. [`AGENTS.md`](../../AGENTS.md)：入口、任务路由和最小开工门。
+2. [《项目工作规范》](项目工作规范.md)：长期通用规范。
+3. [《当前版本工作台》](current/当前版本工作台.md)：当前版本目标、批准门、批次、状态和退出条件。
+4. [《当前详细大纲》](current/具身智能报告-当前详细大纲.md)：当前版本结构、章节职责及证据资产计划。
+5. 目录局部 README 与工具链记录：具体命令和环境事实。
+
+`archive/vX.Y/` 中的规划是历史快照，不覆盖现行文件。
+
+## 按任务阅读
+
+| 任务 | 必读文件 |
+|---|---|
+| 仅浏览仓库 | `AGENTS.md` |
+| 规划、研究、版本、资产、构建或导出 | `AGENTS.md` +《项目工作规范》相关章节 |
+| 推进当前版本 | 上述文件 +《当前版本工作台》 |
+| 结构调整或正文编写 | 上述文件 +《当前详细大纲》相关章节和证据资产表 |
+| 执行构建或导出 | 上述文件 + 目标目录 README / `toolchain.md` |
 
 ## 目录职责
 
-`docs/planning/` 用于维护本项目的规划层文档，而不是正文。
+- 根目录：本导航、唯一长期规范和旧路径兼容跳转页。
+- `current/`：仅维护《当前详细大纲》和《当前版本工作台》两份活跃文件；其他同名文件仅为兼容跳转页。
+- `archive/vX.Y/`：版本冻结时的规划快照，不回写。
 
-它分成三层：
-
-1. 根目录：长期通用规范与导航文件
-2. `current/`：当前活跃规划
-3. `archive/vX.Y/`：历史版本规划归档
-
-## 当前建议阅读顺序
-
-1. [项目工作规范](D:/Projects/embodied-intelligence-report/docs/planning/项目工作规范.md)
-2. [章节写作质量与证据资产规范](D:/Projects/embodied-intelligence-report/docs/planning/章节写作质量与证据资产规范.md)
-3. [当前详细大纲](D:/Projects/embodied-intelligence-report/docs/planning/current/具身智能报告-当前详细大纲.md)
-4. [当前版本修订计划](D:/Projects/embodied-intelligence-report/docs/planning/current/当前版本修订计划.md)
-5. [当前工作清单](D:/Projects/embodied-intelligence-report/docs/planning/current/当前工作清单.md)
-6. [v0.3 证据与资产规划](D:/Projects/embodied-intelligence-report/docs/planning/current/v0.3-证据与资产规划.md)
-
-技能调用补充规则见[《项目工作规范》中的“skills 与质量门”](D:/Projects/embodied-intelligence-report/docs/planning/项目工作规范.md#10-skills-与质量门)：本项目规划和版本文件优先于 skill 默认流程；完整论文编排器默认不启动，按任务需要调用局部研究、引用和验证能力。
-
-## 使用规则
-
-1. 新的结构性正文工作，先更新 `current/具身智能报告-当前详细大纲.md`
-2. 新的非结构性维护工作，先更新 `current/当前版本修订计划.md`
-3. 每次开启新的正文批次前，先更新 `current/当前工作清单.md`
-4. 某版本冻结后，把正文快照放入 `docs/report/versions/vX.Y/`，并把该版本特有的执行面板、方案稿和阶段性计划归档到 `archive/vX.Y/`
-5. 冻结完成后，再把 `current/` 的入口、大纲、修订计划和工作清单切换到下一版本
-6. 根目录不长期保留仅对单个版本有效的临时计划文件
-
-## LaTeX 版本规则
-
-1. `v0.1` 保留 Markdown 作为历史版本源，不进行原地迁移。
-2. 从 `v0.2` 开始，正文唯一编辑源为 `docs/report/latex/current/`，采用 `main.tex` 加分章节 `.tex` 文件组织。
-3. `docs/report/current/` 中的 Markdown 仅作为过渡/历史兼容源；不允许同时手工维护同一内容的 Markdown 与 LaTeX 两套正文。
-4. LaTeX 冻结源存放在 `docs/report/versions/vX.Y/latex/`，最终 PDF 存放在 `output/exports/vX.Y/`。
-5. PDF 为 LaTeX 主交付物；Word 仅作为可选兼容导出，不承诺复杂公式、长表格和图表与 PDF 完全一致。
+新增长期规则前，必须先判断能否并入《项目工作规范》；默认不得新增平行规范文件。
