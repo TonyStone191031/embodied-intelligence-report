@@ -1,0 +1,119 @@
+\chapter{具身系统的公共架构与核心矛盾}
+\label{chap:common-architecture-tensions}
+
+\section{公共栈由数据流和责任边界定义}
+
+不同机器人可以使用不同模型，但都必须把环境变化转成观测、状态、决策和执行，再把结果回流。公共架构不是固定产品框图，而是一组责任：感知提供带时间和不确定度的测量；状态层维护决策可消费的状态；世界表征支持预测和记忆；任务层产生受约束意图；技能层把意图实例化；控制层满足动力学和截止期；安全层拥有过滤、降级和停止权限；数据层记录全过程以供评测和更新。
+
+\begin{figure}[H]
+\centering
+\begin{tabular}{c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c}
+\fbox{环境/身体} & \fbox{感知与状态} & \fbox{世界模型/任务规划} & \fbox{技能与控制}
+\end{tabular}
+
+\vspace{0.7em}
+\begin{tabular}{c@{\quad}c@{\quad}c}
+\fbox{安全监督：过滤、抢占、停止} & \fbox{运行日志与评测} & \fbox{数据治理与版本更新}
+\end{tabular}
+\caption{全书公共系统栈。安全和数据不是末端附加模块，而是横跨闭环的旁路。}
+\label{fig:common-embodied-stack}
+\end{figure}
+
+接口记录可写成
+\begin{equation}
+m=(y,t_s,t_r,f,\Sigma,q,v),
+\label{eq:interface-message-contract}
+\end{equation}
+其中 $y$ 是值，$t_s/t_r$ 是采样/接收时刻，$f$ 是坐标系或语义 frame，$\Sigma$ 是不确定度，$q$ 是质量/有效标志，$v$ 是 schema 与生产者版本。许多集成故障并非模型不会推理，而是坐标系、单位、时间、新鲜度或版本没有进入接口合同。
+
+\section{多时间尺度系统不能由单一循环解释}
+
+\begin{table}[H]
+\begingroup
+\hbadness=10000
+\centering
+\caption{具身系统的多时间尺度及主要失效}
+\label{tab:common-timescales}
+\begin{tabularx}{\textwidth}{p{0.19\textwidth}p{0.18\textwidth}YYp{0.20\textwidth}}
+\toprule
+层级 & 典型尺度 & 输入/输出 & 首要约束 & 超时后行为 \\
+\midrule
+驱动与伺服 & 亚毫秒至毫秒 & 编码器/力—命令 & 抖动、稳定性 & 制动或保持 \\
+估计与局部控制 & 毫秒至百毫秒 & 测量—状态/轨迹 & 新鲜度、可观测性 & 降速、拒绝旧状态 \\
+技能与动作策略 & 百毫秒至秒 & 目标—动作块 & 闭环纠错、可取消 & 重试或切换技能 \\
+任务与人机交互 & 秒至分钟 & 指令—任务图 & 语义、资源、权限 & 澄清、重规划 \\
+数据与模型更新 & 小时至月 & 运行记录—版本 & 治理、回归、回滚 & 保持已知良好版本 \\
+\bottomrule
+\end{tabularx}
+\endgroup
+\end{table}
+
+\texttt{ros2\_control} 的 read--update--write 把硬件状态、控制器与命令接口分开\cite{ros2control2026}，是毫秒级闭环的一种实现骨架；它不能替代秒级技能取消、分钟级任务恢复或长期数据治理。多速率系统应在接口上声明最大年龄、截止期和取消语义。
+
+\begin{lstlisting}[caption={多速率具身运行时的教学骨架；各回路必须在独立调度与测试中实现}]
+while robot_enabled:
+    state = realtime_read_and_estimate()
+    if state.stale or safety_violation(state): safe_fallback()
+    realtime_control_update(state, latest_bounded_skill_command())
+    if skill_tick_due():
+        skill = update_or_recover_skill(state, task_intent)
+    if task_tick_due():
+        task_intent = plan_or_request_clarification(state, memory)
+    append_only_log(state, task_intent, skill, interventions())
+\end{lstlisting}
+
+\section{四组核心矛盾没有一次性答案}
+
+\begin{table}[H]
+\begingroup
+\hbadness=10000
+\centering
+\caption{贯穿全书的设计矛盾及可证伪问题}
+\label{tab:core-system-tensions}
+\begin{tabularx}{\textwidth}{p{0.22\textwidth}YYp{0.24\textwidth}}
+\toprule
+矛盾 & 一侧收益 & 另一侧收益 & 必须用什么证据裁决 \\
+\midrule
+开放泛化—安全包络 & 覆盖未知任务 & 行为可预测、风险可控 & OOD、约束接近、接管与事故率 \\
+端到端—模块化 & 联合优化、少接口损失 & 可诊断、替换与认证 & 同预算消融、故障定位、恢复 \\
+模型规模—实时部署 & 知识与容量 & 时延、功耗与可用性 & 热稳态 p99、任务收益、回退 \\
+统一接口—身体差异 & 数据与技能复用 & 保留真实动力学语义 & 跨本体迁移与接口误差 \\
+\bottomrule
+\end{tabularx}
+\endgroup
+\end{table}
+
+开放泛化不能只用更多成功视频证明，因为未知行为的尾部风险可能同时上升；端到端与模块化要在相同数据和计算预算下比较；大模型必须报告整链时延和功耗；统一动作空间必须说明如何映射到不同自由度、限位和控制模式。这些矛盾决定后续章节的证据问题，而不是在本章预先选边。
+
+\section{安全旁路与恢复必须拥有真实权限}
+
+\begingroup\hbadness=10000
+安全过滤可以在名义动作外增加约束，控制屏障函数是代表性方法\cite{ames2017cbf}；Simplex 思路则在复杂控制器失去可信条件时切换到更强验证的基线控制器\cite{sha2001simplex}。二者共同说明：安全模块必须能拒绝或替换动作，而不只是记录警告。恢复同样不是重新提示模型，而是包含停止、回撤、重新感知、重规划、请求人工和任务终止的状态机。
+\endgroup
+
+数据闭环要记录过滤前后动作、触发原因、人工介入和终止语义，否则训练只看到“机器人最终成功”，会把安全监督器和人工恢复的贡献错误归给策略。第 21、26、28、30 章分别展开运行时恢复、数据血缘、评测统计和安全放行。
+
+\section{全书公共符号与接口约定}
+
+\begin{table}[H]
+\centering
+\caption{后续章节反复使用的最小符号集}
+\label{tab:common-symbols}
+\begin{tabularx}{\textwidth}{p{0.16\textwidth}Yp{0.18\textwidth}Y}
+\toprule
+符号 & 含义 & 符号 & 含义 \\
+\midrule
+$x_t$ & 时刻 $t$ 的真实/估计状态，语境中注明 & $o_t$ & 带时间戳的观测 \\
+$a_t,u_t$ & 高层动作/控制输入 & $g$ & 任务目标或条件 \\
+$\pi_\theta$ & 参数化策略 & $f_\phi$ & 动力学、世界或预测模型 \\
+$\tau$ & 轨迹或 episode & $\mathcal C$ & 约束或安全集合 \\
+$D,V$ & 数据与版本集合 & $\mathcal E$ & 评测契约 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+状态和观测不得混用；动作与控制输入在动作接口章进一步区分；成功率必须连同评测契约；版本 $V$ 至少覆盖模型、代码、硬件、标定和环境。局部章节若改变符号含义，应显式声明。
+
+\section{知识小结与综述判断}
+
+公共架构由感知、状态、预测、任务、技能、控制、安全和数据闭环的责任与接口组成，并运行在多个时间尺度。四组核心矛盾要求用失效、实时、迁移和恢复证据裁决。综述判断是：架构图的价值不在框的数量，而在每条边是否携带坐标、时间、不确定度、版本和失败语义，以及安全与恢复是否拥有实际抢占权限。

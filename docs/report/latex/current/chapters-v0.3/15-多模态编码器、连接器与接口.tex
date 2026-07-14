@@ -1,0 +1,92 @@
+\chapter[多模态编码器、连接器与接口]{多模态编码器、连接器\\与接口}
+\label{chap:multimodal-connectors}
+
+\section{不同模态解决不同可观测性问题}
+
+RGB 提供纹理与语义，深度/点云提供几何，触觉提供局部接触形变与滑移，本体状态提供关节和执行器信息，音频可提示碰撞或电机异常。多模态并非“信号越多越好”：每种传感器都有坐标系、采样率、延迟和失效模式。编码器的任务是把原始信号变成下游可用特征，连接器则把异构特征映射到共享模型接受的 token 或 latent 接口。
+
+\section{视觉、三维、触觉与本体编码}
+
+ViT 把图像划分为 $P\times P$ patch。对 $H\times W$ 图像，token 数为
+\begin{equation}
+N_v=\frac{H}{P}\frac{W}{P}.
+\end{equation}
+若 $H=W=224,P=16$，单帧有 196 个 patch token；两相机、8 帧即 3136 个视觉 token，尚未计入语言和动作。ViT 说明了 patch 序列进入 Transformer 的基本接口\cite{dosovitskiy2021vit}；CLIP 用图文对比预训练获得开放词汇语义对齐\cite{radford2021clip}，但其全局语义不保证毫米级几何和接触状态。
+
+点云编码需处理排列不变性、密度和坐标系；体素/稀疏卷积适合规则空间索引，点式网络保留不规则采样。触觉图像看似 RGB，物理含义却来自弹性体形变、照明和接触标定。GelSight 类传感器从高分辨率表面形变估计几何和力\cite{yuan2017gelsight}；直接套用自然图像增强可能删除微小滑移纹理。本体状态通常经 MLP/傅里叶特征编码，但单位、关节顺序和归一化版本必须写入接口。
+
+\begin{table}[H]
+\centering
+\caption{模态、编码目标与不可互换的失效}
+\label{tab:modality-encoder-failures}
+\begin{tabularx}{\textwidth}{p{0.15\textwidth}YYYY}
+\toprule
+模态 & 主要信息 & 常见编码 & 时间/坐标要求 & 典型失效 \\
+\midrule
+RGB & 纹理、语义 & CNN/ViT & 相机内外参、曝光时间 & 光照、遮挡、域偏移 \\
+深度/点云 & 几何、距离 & 点网络、体素/稀疏卷积 & 深度标定、世界/机体系 & 空洞、反光、稀疏 \\
+触觉 & 接触形变、滑移 & CNN/时序编码器 & 传感器局部系、接触时刻 & 漂移、磨损、饱和 \\
+本体状态 & 关节、速度、力矩 & MLP/时序编码 & 关节顺序、单位、控制时间 & 编码器回零、延迟 \\
+音频 & 冲击、摩擦、电机声 & 频谱/音频 Transformer & 麦克风同步、窗口 & 环境噪声、混响 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{连接器内部到底发生什么}
+
+最简单的线性/MLP adapter 对每个视觉 token 投影到语言模型维度，保留 token 数。Cross-attention 连接器用少量可学习 query $Q_l$ 读取大量模态特征 $K_m,V_m$：
+\begin{equation}
+Z=\operatorname{softmax}\left(\frac{Q_lK_m^\top}{\sqrt d}\right)V_m.
+\label{eq:latent-cross-attention}
+\end{equation}
+若 query 数为 $N_l\ll N_m$，它把 $N_m$ 个输入压成 $N_l$ 个 latent。Perceiver 用 latent bottleneck 迭代读取高维输入\cite{jaegle2021perceiver}；BLIP-2 的 Q-Former 用可学习 query 在冻结图像编码器与冻结语言模型之间提取视觉信息\cite{li2023blip2}。
+
+\begin{figure}[H]
+\centering
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c}
+\fbox{\begin{minipage}{0.17\textwidth}\centering 模态特征\\$N_m\times d_m$\end{minipage}} &
+\fbox{\begin{minipage}{0.14\textwidth}\centering K/V\\投影\end{minipage}} &
+\fbox{\begin{minipage}{0.17\textwidth}\centering $N_l$ 个\\latent query\end{minipage}} &
+\fbox{\begin{minipage}{0.17\textwidth}\centering 共享 token\\$N_l\times d$\end{minipage}}
+\end{tabular}
+\caption{latent-query 连接器的内部计算。作者依据 Perceiver/Q-Former 的共同 cross-attention 结构改绘\cite{jaegle2021perceiver,li2023blip2}。}
+\label{fig:latent-query-connector}
+\end{figure}
+
+压缩不是免费。$N_l$ 太少会丢失小物体或接触瞬间，太多则占据上下文和计算。query 训练目标若只受语言描述监督，可能保留“杯子”语义而丢掉杯沿姿态。连接器是否有效必须按下游定位、动作和接触任务评估。
+
+\section{prefix、交错与 latent slot 接口}
+
+视觉前缀把所有视觉 token 放在语言/动作之前，便于因果解码但弱化帧间对应；interleaving 按时间交错观测和动作，保留轨迹结构但序列更长；latent slot 固定每帧或每模态的 token 数，计算稳定但信息瓶颈更强；action token 把动作离散或嵌入同一词表/隐藏空间。
+
+上下文预算为 $L_{\max}$ 时，若语言占 $L_l$、每帧视觉占 $L_v$、本体/触觉占 $L_s$，可保留帧数近似为
+\begin{equation}
+T_{\max}=\left\lfloor\frac{L_{\max}-L_l-L_{\mathrm{out}}}{L_v+L_s}\right\rfloor.
+\end{equation}
+例如 $L_{\max}=4096,L_l=256,L_{\mathrm{out}}=256,L_v=196,L_s=8$，只能容纳 17 帧。提高相机分辨率会直接缩短时间历史。
+
+\begin{lstlisting}[caption={最小 latent-query 连接器教学伪代码}]
+features, stamps = modality_encoder(raw_sensor)
+assert calibration_and_time_valid(stamps)
+keys = key_projection(features)
+values = value_projection(features)
+queries = learned_queries.expand(batch_size, num_latents, dim)
+latents = softmax(queries @ keys.T / sqrt(dim)) @ values
+latents = output_projection(latents)
+return latents, stamps, modality_valid_mask
+\end{lstlisting}
+
+真实实现还需多头、残差、归一化和掩码；伪代码强调连接器输出必须保留时间戳和有效性，而不能只返回浮点张量。
+
+\section{信息损失、模态鸿沟与时间对齐}
+
+模态对齐常用对比或配对损失，但“语义靠近”不等于几何同构。文本“轻轻放下”没有唯一力轨迹，触觉接触也没有唯一语言描述。共享 latent 需要允许一对多关系，并由动作/任务损失补充约束。
+
+传感到达时间不同会形成虚假跨模态关联。相机看到未接触，触觉已报告碰撞时，简单拼接让模型学到矛盾状态。应按测量时间对齐、保留延迟分布，并对缺失模态训练显式 mask。模态 dropout 只能提高已知缺失的鲁棒性，不能修复错误标定或未检测的陈旧数据。
+
+\section{知识小结与综述判断}
+
+知识小结：编码器从各模态提取任务相关特征；adapter 改变维度，Q-Former 与 Perceiver 类连接器用 latent query 压缩大量特征；prefix、交错和 slot 决定 token 与时间组织。token 预算把空间分辨率、相机数与历史长度直接耦合。
+
+综述判断：结构图中的“connector”不是无损电缆，而是决定信息丢失和训练梯度的瓶颈。论文比较应报告输入 token、输出 latent、监督目标和下游任务，而不能只说“使用轻量适配器”。对机器人而言，时间戳、坐标系与失效 mask 与 hidden size 同等重要。

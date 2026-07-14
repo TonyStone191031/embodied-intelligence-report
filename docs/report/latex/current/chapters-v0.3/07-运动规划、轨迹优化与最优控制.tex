@@ -1,0 +1,134 @@
+\chapter[运动规划、轨迹优化与最优控制]{运动规划、轨迹优化\\与最优控制}
+\label{chap:planning-optimal-control}
+
+\section{学习目标、前置知识与问题边界}
+
+本章把“机器人怎样到达目标”拆成三个不同问题。运动规划寻找不碰撞的几何路径；轨迹生成给路径加上时间、速度和加速度；反馈控制在模型误差与扰动下持续修正执行。读完本章，读者应能写出三者各自的决策变量和约束，推导有限时域 LQR 的反向递推，解释轨迹优化与 MPC 的联系，并为一个受约束任务选择可验证的组合，而不是把 A*、RRT、LQR 与 MPC 当作并列名词。
+
+前置知识是第~\ref{chap:math-computation}章的约束优化、第~\ref{chap:kinematics-lie}章的构型与雅可比，以及第~\ref{chap:dynamics-contact-compliance}章的动力学。高层任务规划和 VLA 只向本章提供目标、代价或参考轨迹；它们不能替代碰撞约束、执行器边界和毫秒级反馈。
+
+\begin{figure}[H]
+\centering
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{c@{\ $\longrightarrow$\ }c@{\ $\longrightarrow$\ }c}
+\fbox{\begin{minipage}{0.25\textwidth}\centering 几何路径\\$q(s)\in\mathcal C_{\mathrm{free}}$\\不含时间\end{minipage}} &
+\fbox{\begin{minipage}{0.25\textwidth}\centering 带时轨迹\\$q(t),\dot q(t),\ddot q(t)$\\满足运动边界\end{minipage}} &
+\fbox{\begin{minipage}{0.25\textwidth}\centering 闭环控制\\$u_t=\pi(x_t,r_t)$\\抵抗扰动\end{minipage}}
+\end{tabular}
+\caption{从几何可行到动态可执行的三层接口。作者教学绘制；箭头表示上游结果成为下游参考，不表示一次求解即可完成任务。}
+\label{fig:path-trajectory-feedback}
+\end{figure}
+
+\section{构型空间、碰撞与采样规划}
+
+令机器人构型为 $q\in\mathcal C$，碰撞构型集合为 $\mathcal C_{\mathrm{obs}}$，则自由空间为 $\mathcal C_{\mathrm{free}}=\mathcal C\setminus\mathcal C_{\mathrm{obs}}$。几何规划寻找连续曲线
+\begin{equation}
+q:[0,1]\rightarrow\mathcal C_{\mathrm{free}},\qquad q(0)=q_s,\quad q(1)\in\mathcal Q_g.
+\label{eq:geometric-path}
+\end{equation}
+这里的碰撞检查不是图形显示功能，而是可行性判定器。机械臂的一个末端位姿通常对应多个关节构型；只在笛卡尔空间画直线，既可能穿过障碍，也可能越过关节限位或奇异区。
+
+离散栅格或低维图上可用 Dijkstra/A*；高维连续空间常用 PRM、RRT 及其变体。RRT 反复采样 $q_{\mathrm{rand}}$，从树中最近节点向样本延伸并做局部碰撞检查。它在常见条件下具有概率完备性：若存在具有正裕量的可行路径，样本数增加时找到路径的概率趋近于一；但原始 RRT 不保证路径代价趋近最优。RRT* 增加邻域选父与重连，使代价在相应假设下几乎必然趋近最优\cite{karaman2011sampling}。
+
+“渐近最优”不等于有限时间最好。狭窄通道的有效体积很小，均匀采样可能长期碰不到入口；碰撞检测往往占据主要计算量；错误的机器人几何、膨胀半径或场景时间戳会让规划器对错误世界给出数学上正确的路径。因而应记录采样预算、碰撞模型版本、最小净空和终止原因，而不只记录“规划成功”。
+
+\section{轨迹优化：从一条初值到约束局部解}
+
+将轨迹离散为 $Q=(q_0,\ldots,q_N)$，典型目标为
+\begin{equation}
+\min_Q\;\underbrace{\frac12\sum_{k=0}^{N-1}\|q_{k+1}-q_k\|_W^2}_{\text{平滑/控制代价}}
++\alpha\underbrace{\sum_{k=0}^{N}c_{\mathrm{obs}}(q_k)}_{\text{障碍代价}},
+\quad\text{s.t. }q_0=q_s,\;q_N\in\mathcal Q_g,\;g(Q)\le0.
+\label{eq:trajectory-optimization}
+\end{equation}
+$W$ 决定不同关节和时间差分的尺度；$c_{\mathrm{obs}}$ 常由有符号距离场构造；$g$ 收纳关节、速度、加速度和任务约束。CHOMP 使用轨迹空间的平滑度量和障碍代价梯度更新整条轨迹\cite{ratliff2009chomp}；TrajOpt 把非凸问题逐次凸化，并强调连续时间碰撞检查，避免只检查离散路点而在两点之间穿越障碍\cite{schulman2014motion}。
+
+式~\eqref{eq:trajectory-optimization} 是局部优化：初值位于障碍哪一侧，常决定最终同伦类。一个常用工程组合是先用采样规划给出拓扑上可行的粗路径，再由轨迹优化增加净空和平滑性，最后做时间参数化。若直接对一条穿障碍直线做梯度下降，距离场梯度在障碍内部可能不稳定，甚至把轨迹推入错误局部极小值。
+
+路径参数 $s$ 与时间 $t$ 不能混用。给定 $q(s)$，有
+\begin{equation}
+\dot q=q'(s)\dot s,\qquad
+\ddot q=q''(s)\dot s^2+q'(s)\ddot s.
+\label{eq:time-parameterization}
+\end{equation}
+速度、加速度、力矩约束因此转化为对 $\dot s,\ddot s$ 的限制。简单地把相邻路点按固定周期发送给控制器，会在曲率大处产生速度/加速度跳变；几何无碰撞并不意味着动态可执行。
+
+\section{LQR 与 DDP：为什么要反向传播一个二次值函数}
+
+考虑线性离散系统 $x_{k+1}=A_kx_k+B_ku_k$，有限时域二次代价
+\begin{equation}
+J=x_N^\top Q_Nx_N+\sum_{k=0}^{N-1}
+\left(x_k^\top Q_kx_k+u_k^\top R_ku_k\right),
+\quad Q_k\succeq0,\;R_k\succ0.
+\label{eq:lqr-cost}
+\end{equation}
+假设后续最优代价为 $V_{k+1}(x)=x^\top P_{k+1}x$，把动力学代入并对 $u_k$ 求极小，得到
+\begin{align}
+K_k&=(R_k+B_k^\top P_{k+1}B_k)^{-1}B_k^\top P_{k+1}A_k,\\
+u_k^*&=-K_kx_k,\\
+P_k&=Q_k+A_k^\top P_{k+1}A_k-A_k^\top P_{k+1}B_kK_k,
+\quad P_N=Q_N.
+\label{eq:riccati-recursion}
+\end{align}
+这不是凭经验选择反馈增益，而是动态规划下二次值函数的系数递推。$R$ 越大，控制动作越昂贵；$Q$ 越大，状态偏差越昂贵。二者量纲必须经缩放后再比较。
+
+以标量系统 $x_{k+1}=x_k+u_k$、两步时域、$Q_0=Q_1=0$、$Q_2=1$、$R_0=R_1=1$ 为例。由 $P_2=1$ 得 $K_1=1/2,P_1=1/2$；再得 $K_0=(1+1/2)^{-1}(1/2)=1/3$。若 $x_0=3$，则 $u_0=-1,x_1=2$，随后 $u_1=-1,x_2=1$。有限时域和控制代价使系统不必在第一步把误差清零。
+
+非线性系统可围绕名义轨迹线性化并反复执行上述反向/正向过程。iLQR/DDP 的核心是对动力学和代价作局部展开，再用线搜索接受新轨迹；控制受限 DDP 还在反向步显式处理动作边界\cite{tassa2014control}。它们仍是局部方法：接触模式突变、坏初值和不准确二阶近似都可能破坏收敛。
+
+\section{MPC：把有限时域优化变成反馈}
+
+模型预测控制在每个时刻求解
+\begin{equation}
+\begin{aligned}
+\min_{x_{0:N},u_{0:N-1}}\quad&\ell_N(x_N)+\sum_{k=0}^{N-1}\ell(x_k,u_k)\\
+\text{s.t.}\quad&x_{k+1}=f(x_k,u_k),\quad x_k\in\mathcal X,\quad u_k\in\mathcal U,\\
+&x_0=\hat x_t,
+\end{aligned}
+\label{eq:mpc}
+\end{equation}
+只执行最优序列的第一个动作，收到新状态估计后平移时域并重算。与离线轨迹优化相比，MPC 通过重规划形成反馈，并可显式处理状态、动作与终端约束；其稳定性并非来自“每次都优化”这句话，而依赖终端代价/终端集合、递归可行性和模型假设\cite{mayne2000mpc}。
+
+预测时域短会近视，时域长则增加求解时间和模型误差累积。若求解器超过控制周期，系统使用的是过期状态对应的动作；若约束突然不可行，必须有软约束、备份控制器或安全停车，而不能把上一次解无限复用。
+
+\begin{lstlisting}[caption={滚动时域受约束控制的教学伪代码；非厂商或开源项目源码}]
+while task_active:
+    x_hat, stamp = estimator.latest()
+    if now() - stamp > freshness_limit: safe_stop()
+    problem.set_initial_state(x_hat)
+    problem.set_reference(local_path, goal)
+    sol = solver.solve(warm_start=shift(previous_sol))
+    if not sol.feasible or sol.solve_time > deadline:
+        execute(backup_controller(x_hat)); continue
+    execute(rate_limit(sol.u[0]))
+    previous_sol = sol
+\end{lstlisting}
+
+\section{同一受约束任务的接口比较}
+
+设七轴机械臂要从货架外移动到箱内抓取位，场景有狭窄入口、关节速度/力矩限制和移动中的人。表~\ref{tab:planning-control-comparison} 的方法不是互斥竞品，而是处理不同变量与时间尺度。
+
+\begin{table}[H]
+\centering
+\caption{同一任务中规划与控制方法的职责、证据与失效}
+\label{tab:planning-control-comparison}
+\begin{tabularx}{\textwidth}{p{0.15\textwidth}YYYY}
+\toprule
+方法 & 决策变量 & 主要约束/证据 & 是否反馈 & 典型失效 \\
+\midrule
+图搜索 & 离散节点路径 & 栅格连通与边代价 & 否 & 维数灾难、离散化漏障碍 \\
+RRT/RRT* & 连续构型树 & 局部连接与碰撞检查 & 否 & 狭窄通道慢、有限预算路径差 \\
+轨迹优化 & 整段路点/控制 & 距离场、平滑和边界 & 通常否 & 初值敏感、局部极小 \\
+LQR/iLQR & 反馈增益/名义轨迹 & 局部动力学与二次代价 & 是 & 线性化失真、动作饱和 \\
+MPC & 有限时域状态/动作 & 动力学、状态和动作集合 & 是 & 超时、不可行、模型偏差 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+一个可审计组合是：RRT* 找到进入箱体的可行同伦类；轨迹优化提高净空并平滑；时间参数化满足速度/加速度边界；MPC 依据第~\ref{chap:state-estimation-slam}章的最新状态跟踪并避开动态障碍；第~\ref{chap:dynamics-contact-compliance}章的阻抗控制处理抓取前后的接触。若状态估计过期或动态障碍使问题不可行，系统退回保持位或安全撤离。这里每一层都有独立退出条件，因而能定位失败究竟发生在世界模型、几何可行性、动态可行性还是执行反馈。
+
+\section{知识小结与综述判断}
+
+知识小结：路径只描述构型随路径参数的变化，轨迹还包含时间导数，控制则把状态误差闭环到动作。采样规划擅长寻找非凸自由空间中的可行同伦类；轨迹优化擅长从初值改进平滑性和约束；LQR/DDP 用局部值函数得到反馈结构；MPC 以滚动时域把优化转成约束反馈。
+
+综述判断：真实系统不应争论“规划还是学习”，而应明确学习模块输出的是目标、代价、初值、模型还是动作。只要机器人仍受碰撞、执行器和实时性约束，规划与控制的可行性检查就有独立价值；但它们的结论只对输入状态和模型有效，不能掩盖感知延迟、场景错误或接触建模缺失。

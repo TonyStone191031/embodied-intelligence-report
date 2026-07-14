@@ -1,0 +1,96 @@
+\chapter{机器人数据工程与持续训练}
+\label{chap:robot-data-engineering}
+
+\section{数据单位是可追溯 episode，而不是视频文件}
+
+机器人学习数据把图像、深度、关节、本体状态、动作、力觉、语言和任务结果绑在同一时间轴上。一个 episode 应被视为带版本的事件记录：它既保存连续 step，也保存机器人、场景、任务、标定、控制模式、操作者、终止原因和来源许可。RLDS 将 episode/step 语义显式化，支持顺序决策数据的记录、回放与转换\cite{ramos2021rlds}；Open X-Embodiment 进一步组织多机构机器人数据\cite{openx2024}。格式标准化解决互操作，不保证物理语义已经一致。
+
+\begin{table}[H]
+\centering
+\caption{机器人 episode 的最小可追溯字段}
+\label{tab:episode-schema}
+\begin{tabularx}{\textwidth}{p{0.16\textwidth}YYYY}
+\toprule
+层级 & 必备字段 & 版本锚点 & 质量检查 & 典型静默错误 \\
+\midrule
+episode & ID、任务、场景、来源、终止 & schema、任务定义、许可证 & 唯一性、完整终止 & 截断被写成失败 \\
+step & 测量时刻、发布时刻、动作、状态 & 时钟域、控制模式 & 单调、丢帧、延迟 & 最新值拼成伪同步 \\
+传感器 & 原始值、单位、坐标、有效性 & 内外参、固件、驱动 & 范围、饱和、时间 & 旧标定配新图像 \\
+动作 & 命令、实际执行、限幅后值 & 控制器、频率、归一化 & 单位、维数、跟踪误差 & 只保存策略建议 \\
+结果 & 成功、失败类、介入、恢复 & 判据与标注指南 & 证据帧、复核者 & “未完成”等同失败 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+DROID 在多地点、真实场景中采集大规模操作轨迹，展示了分布广度与采集组织的重要性\cite{khazatsky2024droid}。但“更多场景”同时带来操作者风格、相机放置、网络、照明和任务措辞的混杂。数据说明应记录采集目的、组成、处理、用途和风险；Datasheets for Datasets 提供了系统记录这些信息的框架\cite{gebru2021datasheets}。
+
+\section{五类来源不能按同一置信度使用}
+
+真机自主数据最接近部署分布，却受当前策略偏差限制；遥操作能高效提供目标行为，但包含操作者延迟和控制设备映射；穿戴/人类视频覆盖广，却缺少机器人动作与力；仿真提供精确标签和可控扰动，却存在物理与视觉差距；互联网数据提供语义知识，通常不能直接监督控制。进入训练混合前，应给每条来源独立的用途和禁止用途。
+
+例如，人类视频可训练对象/动作语义，但若没有可靠 retargeting，不能把人体手腕轨迹直接当机器人末端命令。仿真接触标签可训练事件检测，却不能证明真实传感器标定正确。失败数据也不能统一标为负例：碰撞、识别错、操作者主动终止、网络超时和任务本身不可行需要不同语义。
+
+\section{同步与切片：先保存原始时间，再做对齐}
+
+设传感器 $i$ 的硬件时间为 $t_i$，映射到主时钟可写为
+\begin{equation}
+t=\alpha_i t_i+\beta_i+\epsilon_i(t),
+\label{eq:clock-mapping}
+\end{equation}
+其中 $\alpha_i$ 是频率漂移，$\beta_i$ 是偏移，$\epsilon_i$ 是抖动。只在启动时减去一个 offset 隐含 $\alpha_i=1$，长 episode 中可能逐渐失配。切片时既要保存原始消息时间，也要保存对齐算法、插值方法和最大允许延迟。
+
+动作监督应区分三条流：策略提出的 $a_t^{\mathrm{policy}}$、安全/限幅后的 $a_t^{\mathrm{safe}}$、执行器实际响应 $a_t^{\mathrm{exec}}$。训练策略通常以安全后命令为目标，系统辨识需要执行响应，事故分析又必须保留原始建议。覆盖其中任何一条都会破坏因果追踪。
+
+\begin{figure}[H]
+\centering
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c}
+\fbox{\begin{minipage}{0.16\textwidth}\centering 原始消息与\\不可变对象\end{minipage}} &
+\fbox{\begin{minipage}{0.16\textwidth}\centering 同步、标定\\与 episode 切片\end{minipage}} &
+\fbox{\begin{minipage}{0.17\textwidth}\centering 标注、质检\\与版本 manifest\end{minipage}} &
+\fbox{\begin{minipage}{0.18\textwidth}\centering 训练集、回归集\\失败回流\end{minipage}}
+\end{tabular}
+\caption{从采集到持续训练的数据血缘。派生集可以重建，原始对象和转换 manifest 不得覆盖。}
+\label{fig:data-lineage}
+\end{figure}
+
+\section{质量门：自动检查与人工抽检各管一半}
+
+自动检查适合时间单调、字段缺失、范围、饱和、哈希、重复 episode 和动作跳变；人工抽检负责任务语义、对象身份、成功证据、隐私与异常操作。模型分数不应成为唯一过滤器，否则会删除模型不熟悉但真实有效的长尾样本。
+
+\begin{lstlisting}[caption={episode 入库质量门的教学伪代码}]
+def validate_episode(raw, manifest):
+    require_hash_match(raw, manifest.raw_sha256)
+    require_schema_version(manifest.schema_version)
+    require_monotonic_clocks(raw.messages)
+    aligned = synchronize(raw, manifest.clock_models)
+    require_max_skew(aligned, limit_ms=manifest.max_skew_ms)
+    require_calibration_versions(aligned, manifest.calibration_ids)
+    require_action_contract(aligned.actions, manifest.robot_contract)
+    flags = detect_dropouts_saturation_and_jumps(aligned)
+    episode = slice_without_overwriting_raw(aligned, manifest.task_rules)
+    episode.quality_flags = flags
+    episode.human_review_required = flags.high_risk or sample_for_audit()
+    return episode
+\end{lstlisting}
+
+质量分不应只输出一个标量。至少分为同步、视觉、状态、动作、任务标注和合规六类，使训练采样器能按用途选择：轻微图像过曝可能不影响本体控制训练，却不适合视觉策略。
+
+\section{血缘、划分与持续训练}
+
+每个派生数据集以内容哈希和转换 DAG 标识：原始对象哈希、输入 episode 列表、过滤规则、标注版本、归一化统计、代码 commit 和输出哈希。训练/验证/回归划分应按场景、对象、操作者或时间段分组，而不是随机拆 step；否则同一 episode 的相邻帧会泄漏。
+
+在线失败回流要经过隔离队列。先由第 21 章事件日志把故障归为感知、规划、动作、控制、硬件或任务不可行，再决定进入监督微调、价值/偏好数据、回归测试或仅事故档案。新模型必须在固定回归集和新增故障集上同时通过，才能发布。
+
+\section{案例：一个滑移 episode 的全链路}
+
+机器人抓取杯子时触觉检测滑移，安全层降低速度并将杯子放回。采集端保存原始图像、触觉、策略动作、安全后动作和执行反馈；切片器用事件前后各两秒形成 episode；标注者将主失败标为“抓取接触/滑移”，将恢复标为“安全放置成功”，而非笼统“任务失败”。该 episode 进入三处：策略训练的困难正例、滑移检测回归集、恢复状态机测试。若后续策略成功但安全层介入更多，不应只看最终成功率宣布改进。
+
+\section{隐私、版权与现场合规}
+
+家庭、医疗和工厂数据可能包含人脸、屏幕、声音、工艺和客户资产。采集前应定义目的、告知/授权、最小化字段、保留期、访问角色和删除流程。公开可见的互联网视频不自动具有可训练或可再分发许可；数据 manifest 应分别记录“可内部训练”“可发布派生统计”“可公开样本”等权利。
+
+\section{知识小结与综述判断}
+
+机器人数据工程的核心不是存储容量，而是保持时间、坐标、动作、任务和权利语义的血缘。episode schema、不可变原始对象、版本化转换、分层质量门和故障分类共同支撑持续训练。综述判断是：无法从训练样本回溯到原始消息、标定、控制器和终止证据的数据规模，不应被当作可靠的模型能力基础。
+

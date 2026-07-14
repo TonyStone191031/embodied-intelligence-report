@@ -143,7 +143,7 @@ tau_task = jacobian.transpose()
          * (-stiffness * error - damping * (jacobian * dq));
 tau_d = tau_task + coriolis;
 \end{lstlisting}
-\sourceanchor{仓库 \texttt{frankarobotics/libfranka}；tag \texttt{0.15.0}；文件 \texttt{examples/cartesian\_impedance\_control.cpp}；许可证 Apache-2.0；符号 \texttt{impedance\_control\_callback}。}
+\sourceanchor{仓库 \path{frankarobotics/libfranka}；tag \texttt{0.15.0}；文件 \path{examples/cartesian_impedance_control.cpp}；许可证 Apache-2.0；符号 \path{impedance_control_callback}。}
 
 代码与式\eqref{eq:desired-impedance}之间存在三个值得检查的差异。第一，示例明确“不做惯量整形”，所以 $M_d$ 不是任意指定的常数矩阵；实际闭环惯量随构型变化。第二，示例的旋转误差由四元数构造，不能把欧氏角度误差原样复制。第三，官方文档警告该示例把碰撞阈值设得较高，并要求操作者握住急停。示例能解释算法，不等于通过生产安全验证。
 

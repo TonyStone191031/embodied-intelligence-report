@@ -1,0 +1,91 @@
+\chapter{从经典机器人到基础模型：范式与分类坐标}
+\label{chap:paradigms-taxonomy}
+
+\section{范式变化是接口和证据变化，不是模型年表}
+
+经典机器人、学习型机器人和基础模型机器人并非前后替代。高精度伺服、状态估计和安全互锁仍是基础模型系统的底座；变化主要发生在任务如何指定、知识从哪里获得、动作如何生成以及泛化如何评测。Brooks 的行为式路线强调智能应通过真实世界的感知—行动耦合逐步构建\cite{brooks1991representation}，它挑战的是必须先建立完整符号世界模型的假设，而不是否认一切内部状态。
+
+基础模型通常从广泛数据训练，再适配多个下游问题\cite{bommasani2021foundation}。进入机器人后，适配对象不再只是文本任务，还包括本体、动作空间、控制频率、相机布局和安全包络。RT-1 以多任务机器人数据训练动作 token 策略\cite{brohan2022rt1}，PaLM-E 把连续传感输入接入语言模型\cite{driess2023palme}，RT-2 探索视觉语言知识到动作的迁移\cite{brohan2023rt2}；这些工作改变了数据和模型接口，却没有取消动力学、控制与真机评测。
+
+\begin{table}[H]
+\begingroup
+\hbadness=10000
+\centering
+\caption{五类范式按问题设定比较，而非按年代互相取代}
+\label{tab:robot-paradigms}
+\begin{tabularx}{\textwidth}{p{0.16\textwidth}YYYY}
+\toprule
+范式 & 任务/知识来源 & 核心接口 & 主要证据 & 典型边界 \\
+\midrule
+固定自动化 & 工艺与工程师规则 & I/O、轨迹、互锁 & 节拍、精度、故障率 & 变化需重编程 \\
+感知—规划—控制 & 地图、模型、目标 & 状态、规划、控制器 & 完备性、误差、闭环试验 & 建模与开放世界差距 \\
+行为式/反应式 & 局部感知与行为组合 & 感知—行动通道 & 实时环境行为 & 长期任务与全局约束 \\
+学习型机器人 & 示教、奖励、仿真交互 & 数据集、策略、价值 & 分布内外成功率、消融 & 数据偏移与安全探索 \\
+基础模型机器人 & 跨任务/跨模态预训练 & token/latent、动作头、上下文 & 迁移、组合泛化、系统评测 & 身体差异、时延、证据可比性 \\
+\bottomrule
+\end{tabularx}
+\endgroup
+\end{table}
+
+\section{用五个坐标描述机器人任务}
+
+“通用机器人”缺少可计算边界。一个评测对象至少应写成
+\begin{equation}
+\mathcal R=(B,T,C,O,A),
+\label{eq:robot-taxonomy-tuple}
+\end{equation}
+其中 $B$ 是身体与动作能力，$T$ 是任务族，$C$ 是接触和工具关系，$O$ 是环境开放度，$A$ 是自主组织方式。
+
+$B$ 包括移动形式、自由度、负载、传感器和动作接口；$T$ 区分导航、抓取、装配、移动操作和人机协作等任务结构；$C$ 记录自由空间、刚性接触、柔顺接触、双臂/多体和工具使用；$O$ 记录对象、场景、人员和扰动是否在训练覆盖内；$A$ 不宜只给单一“自主等级”，还要说明任务分配、监督、恢复和人工接管分别由谁承担。
+
+\begin{figure}[H]
+\centering
+\setlength{\tabcolsep}{2pt}
+\begin{tabular}{c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c}
+\fbox{\begin{minipage}{0.15\textwidth}\centering 身体 $B$\\与任务 $T$\end{minipage}} &
+\fbox{\begin{minipage}{0.24\textwidth}\centering 接触 $C$、开放度 $O$\\自主组织 $A$\end{minipage}} &
+\fbox{\begin{minipage}{0.18\textwidth}\centering 评测协议\\与证据边界\end{minipage}}
+\end{tabular}
+\caption{分类坐标的目的不是贴标签，而是生成可比较的评测契约。}
+\label{fig:taxonomy-to-evaluation}
+\end{figure}
+
+例如“在桌面抓取上成功”至少缺少夹爪、对象分布、是否允许碰撞、相机、动作频率、复位和人工介入。把这些字段补齐后，模型结果才可能进入第 24、28 章的比较框架。
+
+\section{能力是条件化系统量}
+
+模型参数 $\theta$ 不能脱离身体与运行时谈能力。更合适的表示是
+\begin{equation}
+P(Y=1\mid \theta,B,T,C,O,A,D,V),
+\label{eq:conditional-system-capability}
+\end{equation}
+其中 $D$ 是训练/适配数据，$V$ 是软件、硬件、标定和策略版本。更换机械臂、相机或动作归一化会改变条件分布；允许人工恢复会改变 $Y$ 的含义。因此“模型会装配”“模型具备空间推理”只能作为假设，必须落到可观测成功判据和失败分层。
+
+Open X-Embodiment 通过统一数据组织推动跨本体训练\cite{openx2024}，但统一 schema 不等于统一物理语义：同名末端位姿可能使用不同坐标系，同为夹爪动作可能对应位置、速度或开合事件。基础模型扩大了知识和数据复用范围，也把接口语义、数据治理和部署验证变成主要研究对象。
+
+\section{端到端与模块化是一条连续谱}
+
+端到端通常指损失从观测直接监督动作，模块化指中间状态与组件接口显式。实际系统介于两端：视觉编码器、语言模型和动作头可以联合训练，但外部仍有时间同步、控制器、安全过滤和恢复状态机；传统规划系统也可能使用学习感知或代价函数。比较路线时应问哪些中间量可观测、哪些模块可替换、误差如何定位、闭环如何恢复，而不是只问“是不是端到端”。
+
+\begin{table}[H]
+\begingroup
+\hbadness=10000
+\centering
+\caption{路线选择应由失效代价和证据需求驱动}
+\label{tab:end-to-end-modular-tradeoff}
+\begin{tabularx}{\textwidth}{p{0.22\textwidth}YYY}
+\toprule
+问题 & 更偏端到端的收益 & 更偏显式接口的收益 & 必做验证 \\
+\midrule
+感知到动作映射 & 联合优化、少手工标签 & 可诊断状态与约束 & 遮挡、漂移、闭环偏移 \\
+跨任务复用 & 共享表示和上下文 & 技能可组合与替换 & 新任务/新本体迁移 \\
+实时与安全 & 可压缩单次推理链 & 硬截止期与独立监督 & 最坏时延、回退和故障注入 \\
+运维更新 & 统一模型发布 & 局部升级和责任隔离 & schema、兼容与回滚 \\
+\bottomrule
+\end{tabularx}
+\endgroup
+\end{table}
+
+\section{知识小结与综述判断}
+
+机器人范式的连续演进体现在知识来源、接口、反馈和评测发生变化，而不是新模型抹去旧控制栈。五维坐标 $(B,T,C,O,A)$ 把抽象能力还原到身体和任务条件。综述判断是：所谓“机器人基础模型”只有在跨任务/跨本体的数据复用、动作接口、闭环泛化和系统约束上给出证据时才是技术类别；仅把通用模型接到机器人演示上，不足以证明范式转变。

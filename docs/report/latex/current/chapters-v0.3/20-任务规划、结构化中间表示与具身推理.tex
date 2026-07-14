@@ -1,0 +1,103 @@
+\chapter[任务规划、结构化中间表示与具身推理]{任务规划、结构化中间表示\\与具身推理}
+\label{chap:task-planning-ir}
+
+\section{规划的产物不应只是自然语言步骤}
+
+自然语言目标“把冰箱里的饮料拿给客厅的人”省略了对象身份、门状态、抓取约束和失败处理。任务规划的职责，是把意图编译成可由技能库执行、可在状态包上检查、可在失败后恢复的中间表示。第 16 章主讲语义怎样落地到动作接口；本章主讲落地之后的结构、约束和执行反馈，不讨论低层控制细节。
+
+把技能 $\sigma$ 写成契约
+\begin{equation}
+\sigma=(\mathrm{Pre},\mathrm{Param},\mathrm{Run},\mathrm{Post},
+\mathrm{Fail},\mathrm{Compensate}),
+\label{eq:skill-contract}
+\end{equation}
+其中前置条件决定能否启动，后置条件决定是否成功，失败集合区分可重试、需重规划和必须停机的情形，补偿动作描述已经改变环境后如何回退。没有这些字段，所谓“任务分解”只是一串无法核验的文本。
+
+\section{四类中间表示及其执行语义}
+
+经典自动规划以状态、动作前置条件和效果搜索计划\cite{ghallab2004automatedplanning}。HTN 通过方法把复合任务递归分解，适合表达领域程序；行为树通过周期 tick 和 Success/Failure/Running 返回值组织反应式执行\cite{colledanchise2018behaviortrees}；程序化表示能表达循环、几何计算和 API 组合，但必须面对类型、权限和终止性。
+
+\begin{table}[H]
+\centering
+\caption{任务中间表示的能力与代价}
+\label{tab:task-ir-comparison}
+\begin{tabularx}{\textwidth}{p{0.15\textwidth}YYYY}
+\toprule
+表示 & 强项 & 执行反馈 & 易验证内容 & 主要风险 \\
+\midrule
+文本步骤 & 生成灵活、便于人读 & 通常非结构化 & 很少 & 歧义、漏条件、无法确定调用 \\
+HTN/符号 & 层级分解、前后条件清晰 & 状态谓词更新 & 可达性、方法约束 & 符号状态与现实脱节 \\
+行为树 & 反应式 tick、局部回退 & 三值或扩展状态 & 节点契约、局部安全 & 大树维护与共享状态副作用 \\
+受限程序 & 循环、计算、工具组合 & 异常、返回值、日志 & 类型、权限、静态规则 & 任意代码、超时、API 误用 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+行为树“可反应”不是因为图画成树，而是控制节点反复 tick 子节点。例如 Sequence 遇到 Failure 立即失败，遇到 Running 保留进度；Fallback 遇到 Success 即返回，失败才尝试下一分支。若叶节点不检查新状态，树仍会机械执行旧计划。
+
+\section{语言相关性必须乘上可执行性}
+
+SayCan 的关键思想是让语言模型对技能与指令的相关性，受到机器人在当前状态下执行该技能的价值/可供性约束\cite{ahn2022saycan}。对候选技能 $\sigma_i$ 可抽象为
+\begin{equation}
+i^*=\arg\max_i\left[
+\log p_{\mathrm{LM}}(\sigma_i\mid g,h)+
+\beta\log p_{\mathrm{exec}}(\mathrm{success}\mid \mathcal S_t,\sigma_i)
+\right],
+\label{eq:ch20-language-affordance-score}
+\end{equation}
+其中 $g$ 是目标，$h$ 是已执行历史。两项不能互相替代：语言高分不代表机器人够得到，价值高分也不代表动作与任务相关。若安全约束为硬条件，应在排序前直接过滤，而不是仅以小惩罚加入分数。
+
+Code as Policies 进一步让语言模型生成调用感知与控制 API 的程序，可表达反馈循环和几何计算\cite{liang2023codepolicies}。这种路线的关键不是“模型会写 Python”，而是暴露给模型的 API 是否受限、参数是否类型化、执行是否在沙箱内、每次调用是否由状态与安全监督器复核。
+
+\begin{figure}[H]
+\centering
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c}
+\fbox{\begin{minipage}{0.16\textwidth}\centering 自然语言目标\\与当前状态\end{minipage}} &
+\fbox{\begin{minipage}{0.16\textwidth}\centering 候选技能\\及契约\end{minipage}} &
+\fbox{\begin{minipage}{0.17\textwidth}\centering 约束检查后的\\BT/HTN/程序\end{minipage}} &
+\fbox{\begin{minipage}{0.18\textwidth}\centering 执行事件\\写回与重规划\end{minipage}}
+\end{tabular}
+\caption{从语言意图到受约束技能调用的编译链。结构化中间表示位于生成模型与运行时之间。}
+\label{fig:task-compilation-chain}
+\end{figure}
+
+\section{完整例子：取饮料任务的状态与失败分支}
+
+初始状态为“机器人在厨房外、冰箱门未知、目标饮料身份不确定”。规划器不能直接输出 `grasp(drink)`，而应先定位冰箱、确认门状态、打开门、重新感知、绑定对象身份、验证抓取条件，再执行取放。下面的伪代码刻意把感知写回和补偿分支放在主路径内。
+
+\begin{lstlisting}[caption={受限任务程序：显式前置条件、写回与失败分支}]
+def fetch_drink(goal, state):
+    require(goal.destination == "living_room")
+    navigate("fridge", timeout=60)
+    state = observe_state(required=["fridge_door", "drink_candidates"])
+
+    if state.fridge_door == "closed":
+        result = run_skill("open_fridge", force_limit=SAFE_FORCE)
+        if result.code == "handle_not_found":
+            return replan_with_active_perception(result.evidence)
+        if not result.success:
+            return escalate("door_open_failed", result.log)
+
+    state = observe_state(required=["drink_candidates"])
+    target = bind_object(goal.description, state.drink_candidates)
+    if target.confidence < ID_THRESHOLD:
+        return ask_human_to_disambiguate(target.alternatives)
+
+    grasp = plan_grasp(target, constraints=["upright", "collision_free"])
+    result = run_skill("pick", object_id=target.id, grasp=grasp)
+    if result.code == "slip":
+        return run_skill("place_safe_and_regrasp", object_id=target.id)
+    require(observe_state().held_object_id == target.id)
+    return navigate_and_handover(goal.destination, target.id)
+\end{lstlisting}
+
+该程序不是为了展示语法，而是展示五个可审计点：目标被类型化；对象 ID 在感知后绑定；技能调用带约束；失败码决定不同恢复；后置条件由新观测确认。若生成模型只负责候选结构，静态检查器和运行时仍可拒绝越权 API、无界循环或缺失失败分支。
+
+\section{多机器人协调不是多份独立计划}
+
+多个机器人共享对象、通道和工具时，局部可行不等于联合可行。中间表示需增加资源锁、时序约束、通信超时和责任转移。例如一个机器人交付工件后，另一个机器人只有在视觉确认工件进入交接区并取得所有权后才能抓取。语言模型可以生成协作候选，但冲突检测、时间窗和安全互锁应由结构化调度器执行。
+
+\section{知识小结与综述判断}
+
+任务规划的核心产物是可检查的执行结构，而非听起来合理的解释。技能契约定义可执行单元，HTN/行为树/受限程序组织分解与反馈，语言相关性和当前可执行性共同筛选候选，运行事件再写回状态。综述判断是：评价“具身推理”应优先检查计划能否绑定真实对象、通过前后条件、覆盖失败分支并被运行时拒绝，而不是仅评价自然语言推理链是否流畅。

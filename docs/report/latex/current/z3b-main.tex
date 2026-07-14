@@ -1,0 +1,21 @@
+\documentclass[UTF8,a4paper,12pt,openany]{ctexbook}
+\input{metadata.tex}
+\newcommand{\ReportBibStyle}{gb7714-2015}
+\input{preamble.tex}
+\title{\ReportTitle\ v0.3 Z3b 部署与安全}
+\author{\ReportAuthor}
+\date{2026-07-14}
+\begin{document}
+\frontmatter
+\maketitle
+\chapter*{装配说明}
+本入口用于第 29--30 章的批次构建，不替代全书 \texttt{main.tex}。
+\tableofcontents
+\mainmatter
+\setcounter{chapter}{28}
+\input{chapters-v0.3/29-硬件、ROS2、实时系统与云边端部署.tex}
+\input{chapters-v0.3/30-安全、验证、标准与治理.tex}
+\backmatter
+\chapter{References}
+\printbibliography[heading=none]
+\end{document}

@@ -1,0 +1,113 @@
+\chapter{强化学习：从 MDP 到离线与安全 RL}
+\label{chap:reinforcement-learning}
+
+\section{MDP 是交互假设，不是算法名称}
+
+马尔可夫决策过程写为 $\mathcal M=(\mathcal S,\mathcal A,P,r,\gamma)$。策略 $\pi(a\mid s)$ 产生动作，环境按 $P(s'\mid s,a)$ 转移并给奖励 $r$。目标是最大化
+\begin{equation}
+J(\pi)=\mathbb E_{\tau\sim\pi}\left[\sum_{t=0}^{T}\gamma^t r(s_t,a_t)\right].
+\label{eq:rl-objective}
+\end{equation}
+“状态”必须足以预测未来；若相机图像缺少速度、接触历史或目标身份，实际问题是部分可观测的。第~\ref{chap:state-estimation-slam}章提供物理状态估计，第~\ref{chap:representation-transfer}章讨论学习表示，本章只研究给定状态/历史后怎样优化长期回报。
+
+\begin{figure}[H]
+\centering
+\begin{tabular}{c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c}
+\fbox{策略 $\pi$} & \fbox{动作 $a_t$} & \fbox{环境 $P$} & \fbox{状态与奖励 $s_{t+1},r_t$}
+\end{tabular}
+\caption{在线强化学习的数据闭环。作者教学绘制；离线 RL 切断了策略到环境的新交互箭头，只能使用固定日志。}
+\label{fig:rl-interaction-loop}
+\end{figure}
+
+\section{价值函数、Bellman 方程与策略梯度}
+
+策略价值和动作价值为
+\begin{align}
+V^\pi(s)&=\mathbb E_\pi\left[\sum_{k=0}^{\infty}\gamma^k r_{t+k}\mid s_t=s\right],\\
+Q^\pi(s,a)&=\mathbb E_\pi\left[\sum_{k=0}^{\infty}\gamma^k r_{t+k}\mid s_t=s,a_t=a\right].
+\end{align}
+按第一步拆分得到 Bellman 期望方程
+\begin{equation}
+Q^\pi(s,a)=r(s,a)+\gamma\,
+\mathbb E_{s'\sim P,a'\sim\pi}[Q^\pi(s',a')].
+\label{eq:bellman-expectation}
+\end{equation}
+它把长时域目标转成一步奖励加后继价值，但也把模型、奖励和价值估计误差递归传播\cite{sutton2018reinforcement}。
+
+以确定性两状态任务为例：在 $s_0$ 执行动作后即时奖励 1 并到 $s_1$，$s_1$ 的后续价值为 5，$\gamma=0.9$，则 $Q(s_0,a)=1+0.9\times5=5.5$，不是即时奖励 1。若价值 5 来自分布外动作的过估计，错误也被折扣后写回 $s_0$。
+
+对可微随机策略，策略梯度定理给出
+\begin{equation}
+\nabla_\theta J(\pi_\theta)
+=\mathbb E_{s,a\sim\pi_\theta}
+\left[\nabla_\theta\log\pi_\theta(a\mid s)A^\pi(s,a)\right],
+\label{eq:policy-gradient}
+\end{equation}
+$A=Q-V$ 衡量动作相对基线的增益。actor--critic 用 actor 表示策略、critic 估计 $V$ 或 $Q$。基线降低方差但不消除偏差；critic 错误会直接误导 actor。
+
+最大熵方法在奖励之外鼓励策略熵。Soft Actor-Critic 使用离策略数据和熵正则，在连续控制中兼顾探索与样本复用\cite{haarnoja2018sac}。熵系数不是“随机程度旋钮”这么简单：动作维度、缩放和执行器饱和都会改变实际探索能量。
+
+\section{在线、离线与示教增强：数据假设的差别}
+
+在线 RL 可以用当前策略收集新数据并纠正价值估计，但真机样本昂贵且探索危险。离策略在线方法可复用旧数据，但仍假设能继续交互。离线 RL 完全使用固定数据集 $\mathcal D=\{(s,a,r,s')\}$；其核心风险是策略选择数据中罕见的动作，而 critic 在这些动作上没有可靠监督。
+
+CQL 在 Bellman 误差之外加入保守项，使数据外动作的价值倾向被压低\cite{kumar2020cql}：
+\begin{equation}
+\mathcal L_{\mathrm{CQL}}(Q)=\mathcal L_{\mathrm{Bellman}}(Q)
++\alpha\left(\mathbb E_{s\sim\mathcal D,a\sim\mu}[Q(s,a)]
+-\mathbb E_{(s,a)\sim\mathcal D}[Q(s,a)]\right).
+\label{eq:cql-objective}
+\end{equation}
+$\mu$ 覆盖候选动作。$\alpha$ 太小不能抑制过估计，太大则把潜在优于数据行为的动作一并压低。离线 RL 不是“把 SAC 的 replay buffer 冻结”；必须显式处理数据支持和 OOD 动作。
+
+示教增强可用专家数据初始化 replay buffer、给策略加行为克隆正则，或把示教与在线经验分层采样。它降低早期探索成本，却可能把专家偏差固化。比较方案时必须固定环境交互预算、示教数量和安全终止规则，否则“在线更强”可能只是用了更多真机尝试。
+
+\begin{table}[H]
+\centering
+\caption{同一机器人任务中的训练数据假设}
+\label{tab:rl-data-regimes}
+\begin{tabularx}{\textwidth}{p{0.15\textwidth}YYYY}
+\toprule
+路线 & 新交互 & 主要优势 & 核心风险 & 合理证据 \\
+\midrule
+在线 RL & 持续 & 可主动纠正策略分布 & 样本成本与危险探索 & 真机步数、损坏/急停 \\
+离策略在线 & 持续但可复用旧数据 & 样本效率较高 & replay 分布与当前策略错位 & 有效样本年龄、覆盖率 \\
+离线 RL & 无 & 可用历史日志训练 & OOD 动作价值过估计 & 数据支持、保守度、离线选择 \\
+示教增强 & 少量/分阶段 & 快速进入有效行为区 & 专家偏差、比较预算不公平 & 示教量、接管和新增交互 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{安全 RL：期望回报之外的约束}
+
+安全问题可写成约束 MDP：最大化 $J_R(\pi)$，同时满足一个或多个代价预算
+\begin{equation}
+J_{C_j}(\pi)=\mathbb E_\pi\left[\sum_t\gamma^t c_j(s_t,a_t)\right]\le d_j.
+\label{eq:cmdp}
+\end{equation}
+拉格朗日法优化 $J_R-\sum_j\lambda_j(J_{C_j}-d_j)$，但期望约束不能保证单次执行不越界；罕见碰撞可被大量安全回合平均掉。CPO 等方法在局部策略更新中近似控制约束变化\cite{achiam2017cpo}，仍依赖代价建模、信赖域近似和采样覆盖。
+
+真实系统通常还需要独立安全层：动作限幅、碰撞监测、控制屏障函数、急停和人工接管。安全层会改变策略实际看到的转移；若日志只记录策略动作而不记录被过滤后的执行动作，训练数据将违反 MDP 语义。
+
+\begin{lstlisting}[caption={带执行动作回写和安全终止的在线训练教学伪代码}]
+proposed = policy.sample(state)
+executed, intervention = safety_filter(proposed, state)
+next_state, reward, cost = robot.step(executed)
+replay.add(state, proposed, executed, reward, cost,
+           next_state, intervention)
+if cost > hard_limit or state_estimate_stale(next_state):
+    robot.safe_stop(); mark_terminal(reason="safety")
+update_actor_critic(replay, constraint_budget)
+\end{lstlisting}
+
+\section{机器人 RL 的实验与失败诊断}
+
+奖励设计必须与传感可测量量一致。只奖励末端靠近目标可能诱导高速撞击；只惩罚能耗可能让机器人不动作；稀疏成功奖励则需要探索或示教。应把任务成功、约束代价、能耗、动作平滑、接管和硬件磨损分别报告，不用一个加权回报掩盖安全退化。
+
+同一任务的最低比较应包含：行为克隆基线、固定数据离线 RL、等交互预算在线/示教增强方案；对每种方法报告数据构成、随机种子、策略选择依据和真机复验。不能用测试环境回报反复挑 checkpoint，再宣称零样本泛化。
+
+\section{知识小结与综述判断}
+
+知识小结：Bellman 方程递归连接即时奖励和未来价值；策略梯度通过优势函数更新动作概率；actor--critic 把策略与价值估计耦合。在线、离策略在线和离线 RL 的根本差别是能否从当前策略获得新数据；安全 RL 又在期望回报之外加入代价约束。
+
+综述判断：机器人 RL 的首要问题不是选择算法缩写，而是声明交互权限、数据支持和安全边界。离线数据不足时，价值函数的精确小数没有物理意义；安全代价不可测时，约束优化也只是形式。可信结论必须把算法性能与真机交互成本、介入机制和失败后果放在同一张证据表中。

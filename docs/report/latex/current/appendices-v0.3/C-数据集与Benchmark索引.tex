@@ -1,0 +1,26 @@
+\chapter{数据集与 Benchmark 索引}
+\label{app:datasets-benchmarks}
+
+\begin{table}[H]
+\begingroup\hbadness=10000
+\centering\small
+\caption{正文涉及的数据集与 benchmark}
+\label{tab:dataset-benchmark-index}
+\begin{tabularx}{\textwidth}{p{0.2\textwidth}p{0.2\textwidth}YY}
+\toprule
+名称 & 类型/主讲章节 & 主要用途 & 使用时的边界 \\
+\midrule
+Open X-Embodiment & 跨机构机器人数据；第 24、26 章 & 跨任务/本体预训练 & schema、动作语义和采样不完全一致 \\
+DROID & 真机操作数据；第 24、26 章 & 多场景双臂/单臂策略研究 & 采集设备和任务覆盖决定外推范围 \\
+RLDS & episode 数据格式；第 24、26 章 & 统一轨迹存储与读取 & 统一容器不等于统一动作定义 \\
+CALVIN & 长时程桌面操作；第 28 章 & 指令链与序列完成评测 & 受控环境不代理开放现场 \\
+Habitat 2.0 & 仿真平台/任务；第 27、28 章 & 家庭操作与导航 & sim2real 与资产覆盖需另验 \\
+RoboCup 规则 & 系统竞赛；第 28 章 & 集成、闭环和可重复规则压力 & 竞赛成绩不直接代表商业 SLA \\
+真机任务单元 & 本书推荐协议；第 28、31--33 章 & 成功、恢复、介入、暴露量联评 & 必须公布版本、分母与失败样本 \\
+\bottomrule
+\end{tabularx}
+\endgroup
+\end{table}
+
+索引不表示数据集互相可直接合并。复现实验应记录数据版本、过滤、采样权重、训练/测试泄漏检查以及动作与本体映射。
+

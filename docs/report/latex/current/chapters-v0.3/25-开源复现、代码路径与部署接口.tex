@@ -1,0 +1,116 @@
+\chapter[开源复现、代码路径与部署接口]{开源复现、代码路径\\与部署接口}
+\label{chap:vla-reproduction}
+
+\section{复现对象：结果、训练还是部署}
+
+“跑通仓库”至少有三种含义：用官方权重完成离线推理；在指定数据上重现微调趋势；接入真实机器人闭环。三者成本和证据强度递增。本章选择 OpenVLA 与 Octo 两条 MIT 开源路线，固定到 OpenVLA commit \texttt{c8f03f48...} 和 Octo release \texttt{v1.5}；不把网页当前 \texttt{main} 当可复现版本\cite{openvla2024code,octo15code}。
+
+\begin{table}[H]
+\centering
+\caption{两条开源 VLA 路线的可复核执行链}
+\label{tab:open-vla-repro-paths}
+\begin{tabularx}{\textwidth}{p{0.14\textwidth}YYYY}
+\toprule
+路线 & 固定版本 & 模型/训练入口 & 动作接口 & 复现重点 \\
+\midrule
+OpenVLA & commit \texttt{c8f03f48...} & \path{vla-scripts/finetune.py}；Prismatic VLA & 离散 token 反量化为连续动作 & tokenizer、数据统计、VLM 显存 \\
+Octo & release \texttt{v1.5} & \texttt{OctoModel}、模块化 transformer/readout & diffusion 动作采样 & task、mask、历史窗、动作统计 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+第 23 章已逐行解释 OpenVLA \texttt{ActionTokenizer} 的均匀分箱，并记录完整 commit、文件与符号。这里不重复源码，而把它放回执行链：数据适配器计算动作统计，训练目标生成 action token，推理端反量化，机器人适配器再恢复真实单位与坐标。任何一步版本错配都会输出“合法但危险”的动作。
+
+\section{环境与权重必须成为 manifest}
+
+复现 manifest 至少包含代码 commit/tag、Python/CUDA/JAX/PyTorch 版本、锁文件哈希、权重 URL 与校验和、数据版本、GPU 型号、精度、随机种子和命令行。权重能加载不代表兼容：tokenizer 词表、视觉预处理或配置字段变化都可能不报错地改变结果。
+
+\begin{lstlisting}[caption={建议的复现 manifest 骨架，不以浮动 latest 作为版本}]
+experiment: octo_offline_smoke_test
+repository: https://github.com/octo-models/octo
+revision: v1.5
+license: MIT
+python: "3.10.x"
+framework: "jax/flax versions from locked environment"
+checkpoint: "octo-base-1.5"
+checkpoint_sha256: "<record after verified download>"
+dataset_schema: "oxe/rlds + local adapter v3"
+robot_adapter: "widowx_delta_ee_v2"
+action_statistics_hash: "<sha256>"
+\end{lstlisting}
+
+尖括号字段表示构建者必须在实际下载后填写，不能由报告编造。初稿的价值在于定义放行条件；最终冻结前应在目标机器生成真实 manifest 和日志。
+
+\section{Octo：task、观测掩码与动作采样}
+
+Octo 的官方入口把模型加载、任务创建和动作采样分开\cite{octo15code}。下列关键调用依据 \texttt{v1.5} README/API 压缩，保留决定接口的语句：
+
+\begin{lstlisting}[language=Python,caption={Octo v1.5 推理关键路径（MIT；按官方 API 压缩）}]
+model = OctoModel.load_pretrained("hf://rail-berkeley/octo-base-1.5")
+task = model.create_tasks(texts=["pick up the red cup"])
+
+observation = {
+    "image_primary": image[None, None],
+    "timestep_pad_mask": np.array([[True]]),
+}
+actions = model.sample_actions(
+    observation, task,
+    unnormalization_statistics=dataset_statistics["action"],
+    rng=jax.random.PRNGKey(seed),
+)
+\end{lstlisting}
+\sourceanchor{仓库 \path{octo-models/octo}；许可证 MIT；release \texttt{v1.5}；主要入口 \path{octo/model/octo_model.py} 的 \texttt{OctoModel.load\_pretrained}、\texttt{create\_tasks} 与 \texttt{sample\_actions}。本段依据官方 release README/API 压缩；未声明逐字复制某一连续行段。}
+
+\texttt{timestep\_pad\_mask} 不是装饰字段：历史窗口开头缺帧时，它阻止填充值进入注意力。\texttt{unnormalization\_statistics} 决定动作恢复尺度。模型预训练动作块长度为 4 时，可以执行全部四步，也可以只执行首步滚动重规划；两种部署协议的时延和扰动恢复不同。
+
+\section{OpenVLA：数据微调与动作 token 接口}
+
+OpenVLA 把图像和指令送入 VLM 主干，再输出动作 token\cite{kim2024openvla}。复现路径应按顺序验证：官方权重单样本前向；tokenizer 编解码往返；目标数据 RLDS/schema 适配；小批过拟合；固定任务微调；离线回放；仿真或影子模式；低速真机。直接从“权重加载成功”跳到真机，会同时暴露图像通道、动作统计、坐标变换和控制周期错误。
+
+一个重要单元测试是
+\begin{equation}
+\epsilon_{\mathrm{roundtrip}}=
+\left\|\boldsymbol a-operatorname{decode}(\operatorname{encode}(\boldsymbol a))\right\|_\infty,
+\end{equation}
+并分别在分箱中心、边界、裁剪外值测试。该误差只能验证量化实现，不能证明机器人动作语义正确；还需用已知末端运动做坐标与单位测试。
+
+\section{机器人适配层：把模型输出变成可拒绝的候选}
+
+\begin{lstlisting}[caption={部署适配器的最小失败链}]
+def deploy_vla(model, raw_observation, robot_contract):
+    obs = robot_contract.preprocess_and_timestamp(raw_observation)
+    assert obs.schema_hash == model.expected_schema_hash
+    normalized_action = model.predict_action(obs)
+    action = robot_contract.denormalize(normalized_action)
+    command = robot_contract.to_control_frame(action)
+    if not robot_contract.dimension_unit_and_rate_valid(command):
+        return reject("adapter_contract_violation")
+    if not shadow_mode_agrees_with_limits(command):
+        return reject("shadow_validation_failed")
+    return runtime_supervisor.filter(command)
+\end{lstlisting}
+
+适配层必须知道模型动作是绝对量还是增量、关节还是末端、世界还是工具坐标、位置还是速度，以及夹爪编码。第 21 章的监督器仍对结果做安全投影；适配器不能把模型声明为“已验证”而绕过运行时。
+
+\section{复现放行表}
+
+\begin{table}[H]
+\centering
+\caption{从离线推理到真机的阶段性退出条件}
+\label{tab:vla-repro-gates}
+\begin{tabularx}{\textwidth}{p{0.16\textwidth}YYY}
+\toprule
+阶段 & 必须留存 & 退出条件 & 不通过时禁止 \\
+\midrule
+环境/权重 & lock、hash、设备日志 & 同一输入可重复加载与前向 & 宣称复现结果 \\
+数据适配 & schema、统计、样本可视化 & 时间/相机/动作语义人工抽检通过 & 大规模训练 \\
+训练验证 & 配置、曲线、checkpoint、种子 & 小批过拟合与固定验证集通过 & 用失败归咎模型 \\
+影子/仿真 & 时延、动作分布、约束事件 & 无单位/坐标/限幅异常 & 真机上电 \\
+低速真机 & 风险评估、急停、监督日志 & 预注册任务与恢复测试通过 & 扩大速度和工作区 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{知识小结与综述判断}
+
+开源复现不是复制安装命令，而是固定源、权重、数据、统计和硬件接口，并让每一阶段都有可审计退出条件。OpenVLA 暴露动作 token 与 VLM 微调链，Octo 暴露模块化 task/observation/action 接口；两者都不能省略机器人适配和独立安全监督。综述判断是：没有 immutable 版本、权重哈希、动作统计、schema 与部署日志的“成功运行”，只能称演示，不能称可复现证据。

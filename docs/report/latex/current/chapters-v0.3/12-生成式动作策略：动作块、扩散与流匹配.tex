@@ -1,0 +1,116 @@
+\chapter{生成式动作策略：动作块、扩散与流匹配}
+\label{chap:generative-action-policy}
+
+\section{为什么动作条件分布需要生成模型}
+
+给定观测历史 $o_{t-h:t}$ 和任务条件 $c$，策略学习的是未来动作分布 $p(a_{t:t+H-1}\mid o,c)$。单步均方回归把多峰分布压成条件均值；自回归离散 token、潜变量动作块、扩散和流匹配则用不同方式保留多峰性。本章主讲动作头和滚动执行，不重复第~\ref{chap:imitation-preference}章的数据采集，也不展开第 23 章的 VLA 骨干比较。
+
+\begin{figure}[H]
+\centering
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{cccc}
+\fbox{\begin{minipage}{0.19\textwidth}\centering 单步连续回归\\$a_t=\mu(o_t)$\end{minipage}} &
+\fbox{\begin{minipage}{0.19\textwidth}\centering 动作块/潜变量\\$a_{t:t+H-1}$\end{minipage}} &
+\fbox{\begin{minipage}{0.19\textwidth}\centering 扩散去噪\\$x_K\rightarrow\cdots\rightarrow x_0$\end{minipage}} &
+\fbox{\begin{minipage}{0.19\textwidth}\centering 流 ODE\\$\dot x=v_\theta(x,t,o)$\end{minipage}}
+\end{tabular}
+\caption{四类动作头的计算对象。作者教学绘制；VLA 离散 token 路线在第 23 章详细比较。}
+\label{fig:generative-action-heads}
+\end{figure}
+
+\section{动作块：预测窗口与执行窗口不是一回事}
+
+动作块一次预测 $H$ 个动作。其监督目标可写成
+\begin{equation}
+\mathcal L_{\mathrm{chunk}}=-\mathbb E_{(o,a_{0:H-1})\sim\mathcal D}
+\log p_\theta(a_{0:H-1}\mid o,c).
+\end{equation}
+块内相关性让模型学习“接近--对准--插入”这样的短时结构，并减少逐步推理开销。ACT 以 Transformer 和条件变分模型学习双臂动作块，用时间集成缓解相邻块预测不一致\cite{zhao2023act}。
+
+设预测块长 $H=16$，系统只执行前 $E=8$ 步后重新观测。$H$ 决定模型看多远，$E$ 决定多久闭环一次。$E=H$ 时延低但开环长；$E=1$ 最闭环但计算贵，且相邻预测可能抖动。时间集成可对覆盖同一时刻的多个历史预测加权平均，但在接触模式突然变化时，旧预测会拖慢响应。
+
+潜变量模型引入 $z$ 表示不同动作模式，证据下界为
+\begin{equation}
+\mathcal L_{\mathrm{CVAE}}
+=\mathbb E_{q_\phi(z\mid a,o)}[-\log p_\theta(a\mid z,o)]
++\beta D_{\mathrm{KL}}(q_\phi(z\mid a,o)\|p(z)).
+\end{equation}
+$\beta$ 太大可能使后验忽略动作而坍缩，太小则训练后验与推理先验不匹配。
+
+\section{扩散策略：从动作噪声反复去噪}
+
+令干净动作块为 $x_0$。前向过程逐步加噪，并可直接采样
+\begin{equation}
+x_k=\sqrt{\bar\alpha_k}x_0+\sqrt{1-\bar\alpha_k}\,\epsilon,
+\qquad \epsilon\sim\mathcal N(0,I).
+\label{eq:diffusion-forward}
+\end{equation}
+网络以观测条件 $c_o$、噪声层 $k$ 和 $x_k$ 预测噪声：
+\begin{equation}
+\mathcal L_{\mathrm{diff}}=
+\mathbb E_{x_0,k,\epsilon}
+\|\epsilon-\epsilon_\theta(x_k,k,c_o)\|_2^2.
+\label{eq:diffusion-noise-loss}
+\end{equation}
+推理从高斯噪声开始，按调度器迭代得到动作块。Diffusion Policy 将视觉条件、时序扩散网络与滚动时域执行结合，用动作序列分布表达多峰操作行为\cite{chi2023diffusionpolicy}。
+
+扩散模型的优势不是“动作更平滑”这一口号，而是能在连续高维块上表示复杂分布；代价是多次网络调用、调度器敏感性和闭环延迟。动作归一化尤为关键：平移米、旋转弧度和夹爪开度若共用尺度，噪声日程会对各维度产生完全不同的物理扰动。
+
+\begin{lstlisting}[caption={滚动执行的条件动作扩散教学伪代码}]
+while task_active:
+    condition = encode(observation_history, task)
+    actions = normal_noise(shape=(horizon, action_dim))
+    for k in reversed(noise_schedule):
+        eps = noise_net(actions, k, condition)
+        actions = scheduler.step(eps, k, actions)
+    actions = denormalize_and_project_limits(actions)
+    execute(actions[:execution_horizon])
+    if contact_mode_changed() or state_stale(): replan_immediately()
+\end{lstlisting}
+
+投影动作限位只保证单步边界，不能保证整段轨迹无碰撞或动态可行；必要时仍要调用第~\ref{chap:planning-optimal-control}章的约束层。若去噪耗时 120 ms 而控制周期 20 ms，生成结果到达时状态已经变化，离线成功率不能解释在线失败。
+
+\section{Flow Matching：直接学习概率路径的速度场}
+
+Flow Matching 选择从简单分布 $p_0$ 到数据分布 $p_1$ 的条件概率路径 $x_t$，训练向量场匹配目标速度 $u_t$：
+\begin{equation}
+\mathcal L_{\mathrm{FM}}(\theta)
+=\mathbb E_{t,x_t}\|v_\theta(x_t,t,c_o)-u_t(x_t\mid x_1)\|_2^2.
+\label{eq:flow-matching}
+\end{equation}
+推理求解常微分方程 $\mathrm d x/\mathrm dt=v_\theta(x,t,c_o)$ 从噪声到动作。Flow Matching 给出了无需模拟随机扩散路径的向量场回归框架\cite{lipman2023flowmatching}；$\pi_0$ 等机器人策略把流式动作头用于连续动作生成\cite{black2024pi0}。
+
+“ODE 所以一步即可”并不成立。数值积分仍可能需要多个函数评估；直线路径、网络误差和求解器容差决定步数与质量。相比扩散，流模型有机会减少采样步数，但训练目标、路径选择和蒸馏策略不同，不能只比较名义迭代次数。
+
+\section{动作表示与执行接口比较}
+
+\begin{table}[H]
+\centering
+\caption{动作头的分布能力、计算与闭环权衡}
+\label{tab:generative-action-comparison}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{0.18\textwidth}YYYY}
+\toprule
+路线 & 输出对象 & 多峰表达 & 推理特点 & 主要失效 \\
+\midrule
+连续单步回归 & 一个连续动作 & 弱 & 一次前向、低延迟 & 均值动作、短视 \\
+离散自回归 token & token 序列 & 中/强 & 逐 token 解码 & 量化误差、时延随长度增 \\
+潜变量动作块 & 连续动作块 & 中 & 一次或少量采样 & 块间不一致、潜变量坍缩 \\
+扩散动作块 & 连续动作块 & 强 & 多步去噪 & 延迟、调度与尺度敏感 \\
+流式动作块 & 连续动作块 & 强 & ODE/少步积分潜力 & 路径与积分误差 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+比较必须固定观测、骨干、数据、动作频率和执行窗口。只让扩散模型使用动作块而让回归基线单步输出，会把时序结构收益错误归因于生成范式。至少应做单步/动作块消融、推理函数评估次数、端到端延迟、任务成功、恢复能力和动作边界违反率。
+
+\section{官方实现导读与复现锚点}
+
+Diffusion Policy 官方仓库把数据集归一化、workspace 训练入口、policy 条件去噪和环境 runner 分开；正文初稿以其 RSS 论文和官方仓库作为实现入口，冻结前需固定 immutable commit、许可证、策略类和推理函数行段。ACT 的公开实现同样把示教数据加载、CVAE/Transformer 策略和 rollout 分开。代码阅读应沿“数据字段--归一化--损失--采样--执行窗口”追踪，而不是只截取网络定义。
+
+对任何生成动作头，复现记录至少包含：动作坐标系与单位、归一化统计量来源、预测/执行窗口、噪声或流时间离散、推理调用次数、控制周期、动作后处理和随机种子。缺少这些字段，模型权重无法解释为可执行策略。
+
+\section{知识小结与综述判断}
+
+知识小结：动作块用联合序列减少逐步短视；扩散通过前向加噪和反向去噪学习连续多峰动作；Flow Matching 回归概率路径速度场并通过 ODE 生成动作。预测窗口、执行窗口和控制周期共同决定闭环性质。
+
+综述判断：生成模型解决的是条件动作分布和时序一致性，不自动解决物理可行性。论文中的离线动作拟合、仿真 rollout 与真机闭环是三种证据；只有同时报告推理延迟、动作尺度、约束违反和失败恢复，才能判断扩散或流式动作头是否真的优于简单动作块。

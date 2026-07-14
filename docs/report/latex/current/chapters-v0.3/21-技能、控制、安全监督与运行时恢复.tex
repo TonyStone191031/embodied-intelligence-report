@@ -1,0 +1,109 @@
+\chapter[技能、控制、安全监督与运行时恢复]{技能、控制、安全监督\\与运行时恢复}
+\label{chap:runtime-recovery}
+
+\section{运行时不是一条从模型直达电机的箭头}
+
+第 20 章产生受约束技能调用，本章讨论调用怎样成为电机命令并在异常时停止。完整运行时至少包含：任务执行器、技能服务器、轨迹/策略、低层控制器、安全过滤器、独立监控器、事件日志和恢复管理器。VLA 或任务规划器只生产候选动作/技能，不拥有绕过速度、力、空间和权限约束的权力。
+
+技能接口应声明输入状态版本、参数单位、允许工作区、最大时长、终止判据、抢占语义和失败码。低层控制器则在更高频率上跟踪目标或调节交互。阻抗控制通过期望的质量--阻尼--刚度关系管理位姿误差与外力\cite{hogan1985impedance}，操作空间控制在任务坐标中组织动力学\cite{khatib1987operational}；二者都不能判断“是否抓错人手中的杯子”。
+
+\section{不同时间尺度必须有明确所有权}
+
+\begin{table}[H]
+\centering
+\caption{具身运行时的时间尺度、权限与失败响应}
+\label{tab:runtime-timescales}
+\begin{tabularx}{\textwidth}{p{0.17\textwidth}YYYY}
+\toprule
+层级 & 典型周期 & 输出 & 允许的抢占者 & 典型失败响应 \\
+\midrule
+任务规划 & 秒至分钟 & 技能图/程序 & 人、策略监督器 & 重规划、请求协助 \\
+技能/策略 & 20--500 ms & 动作块、目标位姿 & 安全监督器、超时器 & 重试、切换技能、撤退 \\
+轨迹与控制 & 0.5--10 ms & 力矩、速度或位置命令 & 硬实时安全层 & 限幅、保持、受控停机 \\
+驱动与硬件保护 & 微秒至毫秒 & 电流、制动 & 硬件联锁 & 断能、制动、故障锁存 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+高层“停止”必须被翻译为低层可实现的停机轨迹，而不是突然令速度为零并假设机械系统瞬时静止。反之，驱动器故障也必须向上传播为结构化事件，否则任务执行器可能不断重发同一技能。
+
+\section{安全过滤：把建议动作投影回可行集}
+
+令安全集合为 $\mathcal C=\{\bm x:h(\bm x)\geq0\}$。控制屏障函数方法要求存在 $\alpha$ 使
+\begin{equation}
+\dot h(\bm x,\bm u)+\alpha(h(\bm x))\geq0.
+\end{equation}
+对仿射系统 $\dot{\bm x}=f(\bm x)+g(\bm x)\bm u$，可把学习策略建议 $\bm u_{\mathrm{nom}}$ 投影为
+\begin{align}
+\bm u^*=\arg\min_{\bm u}\;&\frac12\|\bm u-\bm u_{\mathrm{nom}}\|_{\bm W}^2\\
+\text{s.t. }\;&\nabla h^{\mathsf T}(f+g\bm u)+\alpha(h)\geq0,\quad
+\bm u\in\mathcal U.
+\label{eq:cbf-filter}
+\end{align}
+该二次规划形式把“尽量接近策略”与“保持安全集合”分开\cite{ames2017cbf}。但它依赖状态估计、模型和约束可行性：障碍距离过期、制动模型错误或多个约束冲突时，优化器可能无解。无解分支必须定义受控停机或硬件保护，不能回退到未经检查的原动作。
+
+\begin{figure}[H]
+\centering
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c}
+\fbox{\begin{minipage}{0.16\textwidth}\centering 规划器/VLA\\候选命令\end{minipage}} &
+\fbox{\begin{minipage}{0.16\textwidth}\centering 技能契约\\与状态校验\end{minipage}} &
+\fbox{\begin{minipage}{0.16\textwidth}\centering 安全投影\\与控制器\end{minipage}} &
+\fbox{\begin{minipage}{0.19\textwidth}\centering 执行反馈、事件\\与恢复状态机\end{minipage}}
+\end{tabular}
+\caption{运行时闭环。安全监督和恢复从状态与执行反馈独立取证，而不是只相信模型自报成功。}
+\label{fig:runtime-supervision-loop}
+\end{figure}
+
+\section{Simplex 思路：复杂性能控制与简单安全控制分离}
+
+Simplex 架构用高性能但难以完全验证的控制器处理正常任务，同时保留可验证的基线控制器；决策模块在安全边界前切换\cite{sha2001simplex}。在学习机器人中，高性能控制器可以是 VLA、扩散策略或 MPC，基线控制器可以是减速保持、撤退到已知自由空间或受控放置。
+
+切换条件应包含前瞻裕度，而非等到约束已经违反。例如以制动距离 $d_b(v)$ 和感知/计算延迟 $\tau$ 估计
+\begin{equation}
+d_{\mathrm{required}}=d_b(v)+v\tau+d_{\mathrm{margin}}.
+\end{equation}
+当障碍净距小于 $d_{\mathrm{required}}$ 时即抢占。这里的 $\tau$ 必须包括相机曝光、网络推理、队列、控制下发和执行器响应，而不只是模型推理时间。
+
+\section{异常分类决定恢复，而不是统一“再试一次”}
+
+恢复前先分类：可瞬态重试（短暂遮挡）、需主动感知（对象身份不确定）、需重规划（通道被占）、需补偿（抓取后目标变更）、需人工接管（风险/权限不明）、需锁存停机（驱动或安全链故障）。盲目重试可能把轻微滑移变成掉落，把碰撞接触变成持续施力。
+
+\begin{lstlisting}[caption={运行时监督器教学伪代码：抢占、降级与恢复}]
+def supervise(command, state, health):
+    event = validate(command, state, health)
+    if event.is_hard_fault:
+        hardware_stop()
+        log_latched(event)
+        return STOPPED
+    if event.is_stale_state or event.identity_uncertain:
+        preempt_current_skill()
+        return request_active_perception(event)
+
+    safe_command, feasible = safety_filter(command, state)
+    if not feasible:
+        switch_to_verified_baseline("controlled_stop")
+        return RECOVERING
+
+    result = execute_with_deadline(safe_command)
+    log_event(command, safe_command, state.version, result)
+    if result.success and postcondition_observed(result.skill_id):
+        return SUCCEEDED
+    if result.code in RETRYABLE and retry_budget(result.skill_id) > 0:
+        return retry_with_updated_state(result)
+    if result.code in REPLANNABLE:
+        return request_replan(result.evidence)
+    switch_to_verified_baseline("safe_retreat")
+    return request_human(result)
+\end{lstlisting}
+
+事件日志至少记录：原始候选命令、过滤后命令、状态包版本、约束裕度、抢占者、失败码、传感证据和恢复结果。仅记录“任务失败”无法支持第 26 章的数据回采，也无法区分模型错误、接口错误和硬件错误。
+
+\section{系统案例：抓取策略只是运行时的一环}
+
+假设 VLA 输出未来 16 步末端动作。技能层先检查目标对象 ID 和工作区；轨迹层把动作块转换为时间参数化参考；安全层按最新障碍与力限值投影；控制器执行第一小段；视觉和触觉确认接近、接触与滑移；若对象身份变化则抢占，若轻微滑移则降低速度并调整夹持，若力传感器饱和则受控撤退。模型的贡献是提供候选行为，系统成功来自每一层都能拒绝、解释和恢复。
+
+\section{知识小结与综述判断}
+
+具身运行时把任务结构变成受约束的物理执行。技能契约明确边界，多时间尺度调度分配权限，安全过滤修改或拒绝建议动作，Simplex 式基线控制提供降级路径，异常分类和事件日志支撑恢复与回采。综述判断是：任何“端到端”模型只要进入真实机器人，就必须回答谁能抢占、状态过期怎么办、约束无解怎么办、失败后如何确认环境；答不出这些问题，就还不是完整系统。
+

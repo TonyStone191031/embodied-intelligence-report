@@ -1,0 +1,100 @@
+\chapter[Benchmark、真机评测与复现纪律]{Benchmark、真机评测\\与复现纪律}
+\label{chap:benchmark-reproducibility}
+
+\section{先冻结任务，再运行模型}
+
+评测协议必须先于待测模型确定。一个任务实例至少由初始状态分布 $p(x_0)$、目标 $g$、允许动作与资源、超时 $T$、成功判据 $S$、失败判据 $F$、允许的恢复/人工介入和随机种子组成。若看到模型表现后再修改物体位置、超时或成功判据，数字不再是独立证据。
+
+\begin{equation}
+\mathcal E=(p(x_0),g,\mathcal A,T,S,F,
+\mathcal I,\mathcal R,v_{\mathrm{env}},v_{\mathrm{policy}}),
+\label{eq:evaluation-contract}
+\end{equation}
+其中 $\mathcal I$ 是人工介入规则，$\mathcal R$ 是复位/恢复规则，两个版本字段分别锚定环境与策略。CALVIN 通过连续控制和长时程语言任务形成可重复仿真 benchmark\cite{mees2022calvin}；Habitat 2.0 把场景、任务和模拟器共同发布\cite{szot2021habitat2}。它们提供受控问题，不代表真实家庭全部分布。
+
+\section{三类 benchmark 的证据等级}
+
+\begin{table}[H]
+\centering
+\caption{数据集、仿真与真机评测的证据职责}
+\label{tab:benchmark-evidence-levels}
+\begin{tabularx}{\textwidth}{p{0.17\textwidth}YYYY}
+\toprule
+类型 & 最适合回答 & 可控性/规模 & 主要外部效度风险 & 必须补充 \\
+\midrule
+离线数据集 & 表征、拟合、数据效率 & 高、可重复 & 行为分布固定、无闭环纠错 & 数据血缘、泄漏检查 \\
+仿真闭环 & 策略交互、扰动、消融 & 高、可大规模 & 物理、视觉与任务差距 & 版本、参数、真机配对 \\
+实验室真机 & 指定硬件上的系统能力 & 中、成本高 & 场景窄、操作者和复位偏差 & 预注册协议、完整计数 \\
+现场部署 & 真实工作流与运维边界 & 低、风险高 & 选择性上线、暴露量变化 & 暴露时长、介入、事故率 \\
+竞赛 & 规则下的系统集成与对抗 & 中、公开规则 & 赛制策略与开放部署不同 & 规则版本、赛程与复现说明 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+证据不是简单由下到上替代。仿真适合百万次扰动，真机适合校验关键差距，现场适合评估可靠性和人机流程。完整结论通常是三角验证，而不是只选最有利的一层。
+
+\section{指标要对应失效机制}
+
+任务成功率为 $\hat p=k/n$，应连同试验数和区间报告。第 24 章给出 Wilson 区间；本章进一步区分首次成功率、允许恢复后的最终成功率与无人工介入成功率：
+\begin{align}
+p_{\mathrm{first}} &= N_{\mathrm{first\ success}}/N,\\
+p_{\mathrm{recover}} &= N_{\mathrm{success\ after\ recovery}}/N,\\
+p_{\mathrm{autonomous}} &= N_{\mathrm{success,\ no\ human}}/N.
+\end{align}
+只报告最终成功会掩盖重试成本，只报告首次成功又忽略恢复系统价值。
+
+长时程任务还应报告完成子任务数和失败位置；安全应报告约束接近、过滤、急停、碰撞、超力和人工接管；时延应报告感知、推理、排队、网络、控制下发的 $p50/p95/p99$，而不是平均推理时间。能耗、吞吐和人员分钟数在产业案例中同样是结果变量。
+
+\begin{figure}[H]
+\centering
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c}
+\fbox{\begin{minipage}{0.16\textwidth}\centering 预注册任务\\与冻结版本\end{minipage}} &
+\fbox{\begin{minipage}{0.16\textwidth}\centering 盲化初态\\独立成功判定\end{minipage}} &
+\fbox{\begin{minipage}{0.17\textwidth}\centering 完整事件日志\\失败与介入分类\end{minipage}} &
+\fbox{\begin{minipage}{0.18\textwidth}\centering 计数、区间\\分层与复现实验\end{minipage}}
+\end{tabular}
+\caption{可复核评测的执行链。失败 trial 必须与成功 trial 一样保留。}
+\label{fig:evaluation-protocol}
+\end{figure}
+
+\section{统计纪律：种子、层级与多重比较}
+
+机器人试验往往按任务、对象、场景、日期和机器人形成层级数据。把所有 trial 混成一个百分比会让高频简单任务主导。应预先定义宏平均（任务等权）或微平均（trial 等权），并同时给出分层结果。学习算法对随机种子、超参数和实现细节敏感；《Deep Reinforcement Learning That Matters》系统讨论了这些可重复性问题\cite{henderson2018deeprl}。
+
+模型选择使用验证集，最终测试只运行预注册版本。若比较许多 checkpoint、提示词和阈值后只报告最好结果，实际发生多重比较。至少公开候选数、选择规则和全部主实验。负结果、失败视频和无效 trial 的排除理由必须可审计。
+
+\begin{lstlisting}[caption={预注册真机评测与完整计数的教学伪代码}]
+protocol = load_signed_protocol(PROTOCOL_HASH)
+policy = load_model(POLICY_HASH)
+for trial in protocol.randomized_trials:
+    assert environment_version() == protocol.environment_version
+    reset = independent_operator_apply_reset(trial.reset_id)
+    start = capture_initial_state(reset)
+    result = run_until_success_failure_or_timeout(policy, trial)
+    verdict = independent_judge(result.evidence, trial.rules)
+    append_only_record(trial.id, start, result.events, verdict,
+                       interventions=result.interventions,
+                       exclusions=result.exclusion_reasons)
+assert recorded_trials() == protocol.scheduled_trials
+report_counts_intervals_latency_quantiles_and_failure_strata()
+\end{lstlisting}
+
+“传感器日志损坏”等无效试验可以排除，但必须在解盲前定义规则，并同时报告计划、完成、排除和分析的数量。否则失败 trial 容易被事后解释为“无效”。
+
+\section{复现不是得到相同小数点}
+
+计算复现要求同代码、数据和配置得到相容结果；方法复现允许独立实现；结论复现要求在新团队、硬件或场景中仍支持同一方向的判断。机器人领域硬件差异使逐点相同不现实，因此应定义容忍区间和不变量，例如“在三种摩擦设置下均优于基线”，而非必须重现 73.2\%。
+
+复现包至少包括环境/任务版本、容器或锁文件、模型和数据哈希、运行命令、随机种子、原始 trial 表、分析脚本、失败媒体和硬件配置。只提供均值表无法重新计算置信区间或审查排除项。
+
+\section{RoboCup：规则化系统试验，而非兴趣专题}
+
+RoboCup 各联赛通过公开规则、裁判、对手和现场条件测试感知、协作、运动、恢复与运维；2026 赛事资源仍按联赛分别维护规则\cite{robocup2026rules}。它的学术价值在于把组件放入受约束系统竞争，并暴露实验室难遇到的通信、复位和对抗问题。
+
+但比赛名次混合硬件、软件、战术、维护、赛程和对手强度，不能直接作为某个 VLA 或控制算法的因果证据。用于综述时应引用具体联赛、年份、规则版本、任务和技术报告；若要证明算法贡献，仍需同队内部消融或可复现实验。
+
+\section{知识小结与综述判断}
+
+评测从冻结任务契约开始，以完整 trial 记录、独立判定、分层指标、置信区间和复现包结束。离线、仿真、真机、现场和竞赛分别回答不同问题。综述判断是：没有分母、初始条件、失败判据、人工介入和版本信息的成功率，不足以成为横向模型排名或部署结论的证据。
+

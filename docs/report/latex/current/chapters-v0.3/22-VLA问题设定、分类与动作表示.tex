@@ -1,0 +1,87 @@
+\chapter[视觉—语言—动作模型的问题设定与分类]{视觉—语言—动作模型\\的问题设定与分类}
+\label{chap:vla-taxonomy}
+
+\section{统一问题设定：先写清五个空间}
+
+VLA 不是单一网络结构，而是一类条件策略。比较前应同时声明观测窗口 $\mathcal O$、任务条件 $\mathcal G$、本体状态 $\mathcal S$、动作空间 $\mathcal A$ 与部署闭环。统一写成
+\begin{equation}
+\boldsymbol a_{t:t+H_p-1}\sim
+\pi_\theta(\cdot\mid \boldsymbol o_{t-H_o+1:t},
+\boldsymbol s_{t-H_o+1:t},g),
+\label{eq:vla-unified-setting}
+\end{equation}
+其中 $H_o$ 是观测历史，$H_p$ 是预测视窗。还必须给出实际执行步数 $H_e\leq H_p$；系统每执行 $H_e$ 步便用新观测重规划。只说“模型输出动作块”而不报告 $(H_o,H_p,H_e)$，无法判断延迟、平滑与纠错能力。
+
+动作向量本身还需声明坐标系和语义。例如七维输出可表示末端相对位姿增量加夹爪，也可表示六关节位置加夹爪；两者维数相同却不可互换。RT-1/RT-2 的动作 token 路线\cite{brohan2022rt1,brohan2023rt2}、OpenVLA 的均匀分箱\cite{kim2024openvla}、Octo 的连续动作块\cite{octo2024}和 Diffusion Policy 的去噪轨迹\cite{chi2023diffusion}必须放在同一控制接口下比较。
+
+\begin{figure}[H]
+\centering
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c}
+\fbox{\begin{minipage}{0.16\textwidth}\centering 图像、语言\\本体历史\end{minipage}} &
+\fbox{\begin{minipage}{0.15\textwidth}\centering 共享主干\\条件表征\end{minipage}} &
+\fbox{\begin{minipage}{0.17\textwidth}\centering 回归/token\\扩散/流式头\end{minipage}} &
+\fbox{\begin{minipage}{0.19\textwidth}\centering 反归一化、执行\\$H_e$ 步并重规划\end{minipage}}
+\end{tabular}
+\caption{VLA 的统一输入—动作—执行坐标。动作头之后仍有反归一化、坐标变换与低层控制。}
+\label{fig:vla-unified-pipeline}
+\end{figure}
+
+\section{动作表示的六条坐标轴}
+
+第 23 章详细解释四类代表路线，本节给出比较字段。动作表示至少沿六轴描述：连续/离散，单步/动作块，确定/多峰，逐步生成/并行生成，关节/末端/技能空间，以及开环/滚动闭环。
+
+\begin{table}[H]
+\centering
+\caption{动作头不能脱离执行接口比较}
+\label{tab:vla-action-heads}
+\begin{tabularx}{\textwidth}{p{0.15\textwidth}YYYY}
+\toprule
+动作头 & 训练目标 & 推理方式 & 优点 & 主要代价 \\
+\midrule
+连续回归 & MSE/似然 & 一次前向 & 快、接口直接 & 多峰行为被平均 \\
+离散 token & 交叉熵 & 自回归或并行 & 复用语言解码器 & 量化误差、词表约定 \\
+扩散动作块 & 去噪匹配 & 多步迭代 & 表达多峰、轨迹一致 & 采样时延、调度敏感 \\
+流匹配 & 速度场匹配 & ODE/少步积分 & 连续路径、可并行块 & 求解步数与稳定性 \\
+技能 token & 分类/层级目标 & 技能选择 & 长时程抽象 & 依赖技能库与终止器 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+离散动作常先按训练集分位数或固定范围归一化，再量化为 token。分箱宽度为 $\Delta_j$ 时，第 $j$ 维反量化误差在均匀箱内满足 $|e_j|\leq\Delta_j/2$；但控制误差还取决于坐标雅可比和低层跟踪。FAST 用频域压缩改善动作 token 效率\cite{pertsch2025fast}，仍不能消除机器人间动作语义差异。
+
+扩散与流式策略直接建模条件动作分布。前者学习噪声/得分并迭代去噪，后者学习从简单分布到数据分布的速度场；$\pi_0$ 是 VLA 中采用 flow matching 的代表\cite{black2024pi0}。二者共同优势是动作块的联合分布，差异在训练参数化和数值求解，不应统称为“连续回归”。
+
+\section{训练目标与闭环位置}
+
+行为克隆的一般负对数似然为
+\begin{equation}
+\mathcal L_{\mathrm{act}}=-\mathbb E_{(o,s,g,a)\sim D}
+\log \pi_\theta(a\mid o,s,g).
+\end{equation}
+语言辅助、视觉语言预训练或价值目标可以共享主干，但动作损失对应的数据分布仍决定策略学到什么。训练目标必须连同动作有效掩码、机器人 ID、归一化统计和任务采样权重解释。
+
+闭环也有三种层次：论文中的逐步环境交互；动作块执行后的滚动重规划；以及第 21 章安全控制器在更高频率上的独立闭环。VLA 输出频率不是电机控制频率。若模型 10 Hz 输出目标位姿，1 kHz 阻抗控制器仍承担绝大多数瞬时稳定性。
+
+\begin{lstlisting}[caption={动作块滚动执行的最小协议}]
+while not task_done():
+    state = get_versioned_state(required_modalities)
+    if state.stale or not state.calibration_valid:
+        return request_recovery("invalid_state")
+    normalized = adapter.normalize(state, robot_id)
+    chunk = policy.sample(normalized, instruction)
+    action = adapter.denormalize_and_transform(chunk[:H_EXEC])
+    for command in action:
+        safe_command = runtime_supervisor.filter(command, state)
+        execute(safe_command)
+        if runtime_supervisor.preempted():
+            break
+\end{lstlisting}
+
+\section{评测坐标：开环误差不等于闭环能力}
+
+开环 MSE 或 token 准确率能诊断拟合，却不能评价多峰动作是否可行；仿真闭环能批量比较，但受动力学和视觉域差异影响；真机成功率最接近部署，却高度依赖初始条件、失败判据和试验次数。第 24 章因此把证据按任务、对象、场景、本体和恢复能力拆开。
+
+\section{知识小结与综述判断}
+
+VLA 的统一比较单位不是模型名，而是“输入窗口—任务条件—动作语义—动作分布—执行视窗—低层闭环”。本章建立坐标，第 23 章在坐标上比较代表模型。综述判断是：凡是缺少坐标系、归一化、$H_p/H_e$、控制频率或失败处理的模型介绍，都不足以支持部署层结论。

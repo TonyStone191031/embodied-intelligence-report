@@ -1,0 +1,103 @@
+\chapter{感知、融合与状态接口}
+\label{chap:perception-state-interface}
+
+\section{本章任务：把感知结果变成可消费状态}
+
+第 15 章讨论原始模态怎样编码为特征，本章只主讲这些特征怎样成为世界模型、规划器和控制器能够安全消费的状态。检测框、分割掩码、点云簇或触觉图像都是\emph{测量解释}，尚不是系统状态：它们通常缺少稳定身份、统一坐标系、测量时刻、估计不确定性和有效期。
+
+一个最小状态包可写为
+\begin{equation}
+\mathcal{S}_t=\{\hat{\bm{x}}_t,\bm{P}_t,\mathcal{O}_t,\mathcal{C}_t,
+\mathcal{F}_t,\mathcal{T}_t,v_{\mathrm{calib}},\bm{m}_t\},
+\label{eq:state-packet}
+\end{equation}
+其中 $\hat{\bm{x}}_t$ 与 $\bm{P}_t$ 是机器人状态及协方差，$\mathcal{O}_t$ 是带身份的对象集合，$\mathcal{C}_t$ 是接触集合，$\mathcal{F}_t$ 是坐标变换，$\mathcal{T}_t$ 保存测量与发布时间，$v_{\mathrm{calib}}$ 是标定版本，$\bm{m}_t$ 是逐字段有效性掩码。式~\eqref{eq:state-packet} 的要点不是字段越多越好，而是每个消费者都能判断“值是什么、在何时何地成立、还能否使用”。
+
+\section{从像素、点和接触到对象状态}
+
+二维检测给出类别与框，实例分割进一步给出像素级对象区域。Mask R-CNN 的并行分类、框回归与掩码分支是典型实例分割结构\cite{he2017maskrcnn}，但类别概率不能直接回答对象的六自由度位姿、遮挡程度或可抓取区域。三维点集编码如 PointNet 通过对称聚合保持输入排列不变\cite{qi2017pointnet}；它仍不自动解决传感器外参、稀疏视角和跨帧身份。
+
+对象状态应至少包含
+\begin{equation}
+o_i=(\mathrm{id}_i,c_i,{}^W\bm{T}_{o_i},\bm{v}_i,\Sigma_i,
+\mathcal{A}_i,t_i,q_i),
+\end{equation}
+其中 $\mathcal{A}_i$ 表示可供性候选，例如“可抓取区域”或“可倾倒方向”，$q_i$ 表示质量与来源标志。可供性不是类别的固定属性：同一杯子在杯柄被遮挡、内部装有热液体或位于狭窄货架时，可执行动作不同。
+
+触觉又提供另一类局部状态。GelSight 类传感器从弹性体表面形变估计接触几何与力\cite{yuan2017gelsight}；它适合判断接触、滑移和局部形状，却不能替代全局视觉定位。把触觉图像当普通 RGB 图像并做强裁剪，可能恰好删掉决定滑移的微小纹理。
+
+\begin{table}[H]
+\centering
+\caption{感知输出进入状态包前必须补齐的语义}
+\label{tab:perception-state-fields}
+\begin{tabularx}{\textwidth}{p{0.13\textwidth}YYYY}
+\toprule
+来源 & 原始输出 & 必补字段 & 主要消费者 & 不可静默处理的失效 \\
+\midrule
+二维视觉 & 框、掩码、关键点 & 身份、深度、坐标、遮挡、时间 & 任务规划、抓取 & 类别正确但位姿错误 \\
+三维感知 & 点、体素、表面 & 外参、法向、协方差、可见域 & 碰撞检查、定位 & 稀疏区被误当自由空间 \\
+触觉/力觉 & 形变、力矩、滑移分数 & 接触点、工具坐标、带宽、饱和 & 柔顺控制、技能终止 & 饱和值被当真实力 \\
+本体状态 & 关节、速度、电流 & 单位、顺序、零位、驱动器状态 & 估计器、控制器 & 版本错配仍数值合法 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{时间对齐、融合与统计门控}
+
+多模态融合首先是时序问题。若相机帧的测量时刻为 $t_m$、状态包发布时间为 $t_p$，系统必须按运动模型把测量传播到共同参考时刻，或明确保留其原始时刻；直接拼接“最新值”会制造不存在的同步快照。第 8 章的滤波与平滑给出了估计基础，本章强调发布接口。
+
+对测量残差 $\bm{r}=\bm{z}-h(\hat{\bm{x}})$ 和创新协方差 $\bm{S}$，常用 Mahalanobis 门控为
+\begin{equation}
+d^2=\bm{r}^{\mathsf T}\bm{S}^{-1}\bm{r}\leq \chi^2_{k,1-\alpha}.
+\label{eq:mahalanobis-gate}
+\end{equation}
+式中 $k$ 是残差维数，$\alpha$ 是拒绝概率。该门只能说明测量与当前统计模型是否一致，不能证明对象身份或坐标语义正确；系统性外参偏差甚至可能长期“稳定地错误”。Kalman 滤波的协方差更新\cite{kalman1960new}和机器人状态估计中的流形、时间与噪声建模\cite{barfoot2024state}都要求这些假设显式化。
+
+\begin{figure}[H]
+\centering
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c}
+\fbox{\begin{minipage}{0.17\textwidth}\centering 带时间戳的\\模态观测\end{minipage}} &
+\fbox{\begin{minipage}{0.16\textwidth}\centering 坐标与\\标定校验\end{minipage}} &
+\fbox{\begin{minipage}{0.16\textwidth}\centering 关联、门控\\与融合\end{minipage}} &
+\fbox{\begin{minipage}{0.18\textwidth}\centering 状态包\\+ 质量元数据\end{minipage}}
+\end{tabular}
+\caption{从测量到可消费状态的生产链。任何校验失败都应产生降级或拒绝事件，而非填入默认零值。}
+\label{fig:state-production-pipeline}
+\end{figure}
+
+\section{缺失模态与降级发布}
+
+缺失模态至少分为四类：传感器未发布、消息迟到、数值越界、语义质量不足。四者不能统一写成零。以触觉为例，零接触力与“触觉离线”含义相反；以前一帧填充又会把已结束接触延长。状态包应携带 `valid`、`age`、`source` 和 `reason`，消费者声明自己允许的最大陈旧时间。
+
+\begin{lstlisting}[caption={状态包发布器的教学伪代码：显式处理迟到、标定与降级}]
+def build_state_packet(target_time, measurements, calibration):
+    packet = StatePacket(target_time=target_time)
+    for name, msg in measurements.items():
+        if msg is None:
+            packet.invalidate(name, reason="missing")
+            continue
+        if target_time - msg.stamp > MAX_AGE[name]:
+            packet.invalidate(name, reason="stale", age=target_time-msg.stamp)
+            continue
+        if msg.calibration_version != calibration.version:
+            packet.invalidate(name, reason="calibration_mismatch")
+            continue
+        aligned = transform_and_propagate(msg, calibration, target_time)
+        if not innovation_gate(aligned):
+            packet.invalidate(name, reason="statistical_outlier")
+            continue
+        packet.update(name, aligned.value, aligned.covariance,
+                      source=msg.sensor_id, stamp=msg.stamp)
+    packet.mode = choose_degraded_mode(packet.validity_mask)
+    return packet
+\end{lstlisting}
+
+\section{工程失效：数值合法不等于语义正确}
+
+最危险的接口故障往往不会产生 NaN：毫米与米混用、相机坐标与世界坐标混用、旧外参配新数据、对象 ID 在遮挡后交换，都能产生范围合理的数值。因而测试应同时覆盖单位、坐标变换闭环、时间单调性、标定版本和对象身份连续性。状态包还应记录最近一次重定位、测量拒绝与传感器降级原因，使第 21 章的运行时监督器能够追溯。
+
+\section{知识小结与综述判断}
+
+本章把感知系统的输出从“模型预测张量”提升为带契约的状态产品。核心链条是：模态解释产生候选测量，时间与坐标校验建立可比性，关联与融合给出估计和不确定性，状态包再把有效性与来源交给下游。综述判断是：衡量感知模块不能只看离线 mAP 或分割精度，还要看状态在闭环中的陈旧度、校准性、身份稳定性和降级可用性。
+

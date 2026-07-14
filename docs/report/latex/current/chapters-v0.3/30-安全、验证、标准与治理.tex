@@ -1,0 +1,129 @@
+\chapter{安全、验证、标准与治理}
+\label{chap:safety-verification-governance}
+
+\section{安全对象是完整应用，不是单个模型}
+
+具身系统的危险来自能量、运动、工具、环境、通信、数据和策略共同作用。模型输出正确并不保证制动距离足够；机械本体合规也不保证远程更新不会关闭互锁。风险分析因此要从预期用途和可合理预见误用出发，沿任务、人员、环境、硬件、软件和运维生命周期识别危险。ISO 12100 给出机械风险评估与风险降低的通用方法\cite{iso12100_2010}，但具体产品仍需适用的 C 类标准和合格人员完成工程判断。
+
+风险不宜被压成一个脱离语境的分数。可将危险场景 $h$ 记录为
+\begin{equation}
+R_h=(S_h,E_h,P_h,A_h),
+\label{eq:risk-tuple}
+\end{equation}
+其中 $S$ 为伤害严重度，$E$ 为暴露，$P$ 为危险事件概率，$A$ 为避免或限制伤害的可能性。不同标准的分级方法并不完全相同；四元组的用途是迫使团队写清假设、受影响人群和证据，而不是自创认证等级。
+
+\begin{table}[H]
+\begingroup
+\hbadness=10000
+\centering
+\caption{四类风险域需要不同控制与证据}
+\label{tab:safety-domains}
+\begin{tabularx}{\textwidth}{p{0.16\textwidth}YYY}
+\toprule
+风险域 & 典型危险 & 首选控制 & 验证证据 \\
+\midrule
+物理/机械 & 夹挤、碰撞、跌落、工具伤害 & 本质安全、限能、隔离、防护 & 力/速/距离、制动、结构试验 \\
+功能安全 & 传感失效、控制卡死、急停失效 & 独立安全功能、诊断、冗余 & PL/SIL 分析、故障注入、证明测试 \\
+网络与数据 & 未授权命令、更新篡改、隐私泄露 & 身份、最小权限、签名、分区 & 威胁模型、渗透测试、审计日志 \\
+模型行为 & 错误理解、分布外动作、绕过约束 & 能力包络、运行时过滤、人工接管 & 对抗任务、未知类、过滤/接管率 \\
+\bottomrule
+\end{tabularx}
+\endgroup
+\end{table}
+
+控制优先级通常是消除危险、通过设计降低风险、增加工程防护，再辅以使用信息和培训。把警告弹窗或“请谨慎使用”放在最前面，是把设计责任转嫁给操作者。
+
+\section{标准先看适用范围，再看编号}
+
+\begin{table}[H]
+\begingroup
+\hbadness=10000
+\centering
+\caption{截至 2026-07-14 的标准与框架定位；状态变化需在冻结前复核}
+\label{tab:safety-standards-scope}
+\begin{tabularx}{\textwidth}{p{0.22\textwidth}YYp{0.20\textwidth}}
+\toprule
+文件 & 主对象 & 能回答什么 & 当前边界 \\
+\midrule
+ISO 12100:2010 & 通用机械 & 风险评估与降低方法 & 现行、待修订，不替代产品标准 \\
+ISO 10218-1:2025 & 工业机器人本体 & 本体安全设计与信息 & 不覆盖完整应用/单元\cite{iso10218_1_2025} \\
+ISO 13849-1:2023 & 安全相关控制部件 & SRP/CS 设计集成方法 & 不替应用指定所需 $PL_r$\cite{iso13849_1_2023} \\
+ISO/TS 15066:2016 & 协作工业机器人系统 & 协作运行补充要求 & 现行但待修订，非通用服务机器人标准\cite{isots15066_2016} \\
+ISO 13482:2014 & 个人护理机器人 & 人机接触相关危险与措施 & 现行；第二版仍为 FDIS\cite{iso13482_2014} \\
+IEC 62443-4-1:2018 & IACS 产品开发 & 安全开发、缺陷、补丁和退役 & 网络安全生命周期，不替代机械安全\cite{iec62443_4_1_2018} \\
+NIST AI RMF 1.0 & 跨行业 AI 风险 & 治理、映射、度量、管理 & 自愿框架且正在修订\cite{nist2023airmf} \\
+\bottomrule
+\end{tabularx}
+\endgroup
+\end{table}
+
+同一机器人可能同时落入机械、工业机器人、移动平台、医疗器械、电气、无线电、数据保护和网络安全要求。能否宣称“符合”取决于产品用途、地区、集成方式和合格评定路径；引用一个标准编号不能代替适用性分析。尤其不能把“参考了某标准”“实验中通过阈值”和“经独立机构认证”写成同一等级。
+
+\section{安全架构必须独立于学习策略}
+
+学习策略可以提出动作，但不应拥有最终、不可撤销的能量权限。安全监督器读取经验证的状态和硬件安全 I/O，对速度、力、区域、姿态、通信新鲜度和设备状态执行确定性约束；遇到越界或监督器自身故障时进入预定义安全状态。
+
+\begin{figure}[H]
+\centering
+\begin{tabular}{c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c}
+\fbox{\begin{minipage}{0.20\textwidth}\centering 任务规划/VLA\\候选动作 $u_{\mathrm{nom}}$\end{minipage}} &
+\fbox{\begin{minipage}{0.23\textwidth}\centering 安全过滤与仲裁\\约束、时效、模式\end{minipage}} &
+\fbox{\begin{minipage}{0.20\textwidth}\centering 实时控制/驱动\\允许动作 $u^*$\end{minipage}}
+\end{tabular}
+
+\vspace{0.7em}
+\begin{tabular}{c@{\quad}c@{\quad}c}
+\fbox{独立急停/安全 PLC} & \fbox{安全状态估计} & \fbox{事件记录与人工接管}
+\end{tabular}
+\caption{学习策略位于受约束通道内；独立急停不能依赖同一模型、进程或普通网络。}
+\label{fig:independent-safety-supervisor}
+\end{figure}
+
+对可微安全集合 $\mathcal C=\{x:h(x)\geq0\}$，控制屏障函数可把名义命令投影到满足约束的命令\cite{ames2017cbf}：
+\begin{equation}
+u^*=\arg\min_u \frac12\|u-u_{\mathrm{nom}}\|_W^2
+\quad\text{s.t.}\quad
+\nabla h(x)^\top(f(x)+g(x)u)\geq-\alpha(h(x)),\quad u\in\mathcal U.
+\label{eq:safety-filter-qp}
+\end{equation}
+它要求状态、动力学、约束和求解时间足够可信；感知漏检、模型误差或 QP 超时会破坏保证。因此工程系统还需速度/力硬限制、watchdog、制动和安全 I/O。Simplex 架构用高性能控制器与经过更强验证的基线控制器切换，是另一种隔离复杂性的路线\cite{sha2001simplex}；切换条件和回切滞环本身也必须验证。
+
+\section{验证从组件证据走向异常工况}
+
+正常任务成功率只覆盖运行域的一小块。验证矩阵应交叉任务阶段、人员位置、负载、速度、网络、照明、摩擦、传感故障、执行器故障、模型版本和恢复动作。至少包括静态分析与单元测试、软件/硬件在环、仿真扰动、受控真机、故障注入、红队、现场灰度和回归复测。
+
+安全事件率必须带暴露量：
+\begin{equation}
+\lambda_k=\frac{N_k}{H_{\mathrm{operation}}},
+\qquad
+\lambda_k^{\mathrm{task}}=\frac{N_k}{N_{\mathrm{tasks}}},
+\label{eq:safety-exposure-rate}
+\end{equation}
+其中事件 $k$ 可以是保护停机、超力、碰撞、人工接管或网络拒绝。零事故而只有十分钟运行不能证明低风险；保护停机下降也可能是检测失效，必须同时审查近失事件和诊断覆盖率。
+
+红队不只测试提示注入。还应尝试模糊指令、互相冲突的多用户命令、被遮挡的人、伪造二维码、重放传感器、过期地图、恶意工具输出、断网和降压。每个发现要转成威胁/危险场景、修复、回归用例和剩余风险，而不是只保留演示视频。
+
+\begin{lstlisting}[caption={证据包驱动的安全放行教学伪代码}]
+release = load_candidate(model_hash, software_bill, calibration_set)
+assert applicable_standards_reviewed(release.intended_use)
+hazards = load_signed_hazard_log(release.system_version)
+for hazard in hazards:
+    assert hazard.control_is_implemented
+    assert verify(hazard.test_protocol, release).passes_acceptance
+assert all_safety_functions_independent_and_tested()
+assert fault_injection_and_red_team_regressions_pass()
+assert rollback_image_is_signed_and_boot_tested()
+deploy_to_bounded_exposure(release)
+if safety_event_rate_exceeds_gate() or unknown_failure_occurs():
+    rollback_and_quarantine(release)
+\end{lstlisting}
+
+\section{网络、数据与模型治理进入同一安全案例}
+
+机器人节点能运动真实硬件，身份和权限必须收敛到最小能力：视觉节点不应写电机命令，日志节点不应加载控制器，远程运维凭据不应长期共享。软件物料清单、签名制品、漏洞响应、补丁窗口和退役密钥属于产品生命周期；IEC 62443-4-1 正是把网络安全活动延伸到缺陷管理、补丁和产品退役\cite{iec62443_4_1_2018}。
+
+AI 治理补充模型特有的不确定性：训练数据许可与隐私、能力边界、分布漂移、人类监督、事件透明度和版本责任。NIST AI RMF 提供组织级 Govern、Map、Measure、Manage 框架\cite{nist2023airmf}，但不能替代具体机械安全功能，也不是认证证书。安全案例应把每个主张连接到需求、实现、试验、结果和剩余风险，并记录谁有权接受风险和撤回版本。
+
+\section{知识小结与综述判断}
+
+安全工程从预期用途和危险场景出发，通过本质安全设计、独立安全功能、网络/数据控制、模型运行时约束和分层验证形成证据包。标准必须按对象、版本和适用范围引用。综述判断是：论文中的安全过滤、厂商的“符合设计原则”和经适用合格评定的产品能力不是同一证据等级；只有危险日志、独立控制、异常工况测试、暴露量指标和可回滚放行共同闭合，才能把实验性防护推进为可运营的安全能力。

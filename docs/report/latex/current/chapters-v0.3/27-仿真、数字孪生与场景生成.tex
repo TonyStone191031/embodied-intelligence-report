@@ -1,0 +1,107 @@
+\chapter{仿真、数字孪生与场景生成}
+\label{chap:simulation-digital-twin}
+
+\section{仿真的交付物是可执行实验，不是漂亮画面}
+
+机器人仿真至少承担四种任务：生成训练经验、执行软件在环测试、复现现场故障、比较算法。四者对物理、视觉、速度和接口的要求不同。数字孪生也不等于高精度三维模型；它必须把特定设备、标定、控制器、场景参数和实测误差绑定到版本，能够回答“这个仿真对应哪台机器人、哪次维护之后的状态”。
+
+仿真状态转移可写为
+\begin{equation}
+\boldsymbol x_{t+1}=F_{\phi}(\boldsymbol x_t,\boldsymbol u_t,\boldsymbol\xi_t),
+\qquad \boldsymbol y_t=G_{\psi}(\boldsymbol x_t,\boldsymbol\eta_t),
+\label{eq:simulator-model}
+\end{equation}
+$\phi$ 包含质量、惯量、摩擦、接触与执行器参数，$\psi$ 包含相机、材质、光照和传感器模型，$\boldsymbol\xi,\boldsymbol\eta$ 表示过程与观测扰动。平台名称不能替代这些参数和求解设置。
+
+\section{平台比较应从用途出发}
+
+\begingroup
+\hbadness=10000
+MuJoCo 面向多关节动力学与接触控制，采用广义坐标和专门接触求解方法\cite{todorov2012mujoco}；Gazebo 从开放的三维多机器人仿真与传感器/中间件集成出发\cite{koenig2004gazebo}；Habitat 2.0 把可交互家居资产、并行仿真和长时程家务 benchmark 连接起来\cite{szot2021habitat2}；Isaac Sim 强调 Omniverse/USD 资产、PhysX、渲染、合成数据与 ROS/软件在环链路。当前官方文档还显示物理传感器 API 在 6.0 发生迁移，说明“平台能力”必须附版本\cite{nvidia2026isaacsim}。
+
+\begin{table}[H]
+\centering
+\caption{仿真平台按实验职责比较，而非制作单一排行榜}
+\label{tab:simulator-comparison}
+\begin{tabularx}{\textwidth}{p{0.13\textwidth}YYYY}
+\toprule
+平台 & 主要长项 & 资产/传感 & 并行与接口 & 选型时优先验证 \\
+\midrule
+MuJoCo & 控制、动力学、接触研究 & MJCF、相机/基本传感 & 轻量 API、批量依赖上层框架 & 接触参数、执行器、模型转换 \\
+Gazebo & ROS 系统集成、多机器人 & SDF/URDF、插件化传感 & 中间件与仿真时间集成 & 插件版本、实时因子、时钟 \\
+Habitat 2.0 & 室内导航与移动操作 & ReplicaCAD、家居对象 & 高吞吐任务环境 & 任务/对象状态与真实布局差异 \\
+Isaac Sim & USD 场景、渲染、合成数据 & RTX/物理传感、Replicator & GPU、ROS 2、SIL/HIL & GPU/版本、PhysX、传感 API 迁移 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+\endgroup
+
+表中“长项”不是精度保证。即使同一引擎，步长、求解迭代、碰撞网格、接触刚度和 GPU/CPU 后端不同也会改变结果。跨论文速度只在相同场景、硬件、传感器和同步策略下可比。
+
+\section{视觉资产、碰撞资产和动力学资产必须分层}
+
+渲染网格追求外观细节，碰撞网格追求稳定且计算可控的接触几何，动力学资产还需质量、惯量、关节、限制、摩擦、柔顺和执行器。直接把高面数视觉网格当碰撞体，会产生尖锐接触、穿透和性能问题；用过度简化碰撞体又可能虚增抓取裕度。
+
+\begin{figure}[H]
+\centering
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c}
+\fbox{\begin{minipage}{0.16\textwidth}\centering CAD/扫描\\视觉资产\end{minipage}} &
+\fbox{\begin{minipage}{0.16\textwidth}\centering 碰撞、关节\\质量与材料\end{minipage}} &
+\fbox{\begin{minipage}{0.17\textwidth}\centering 任务脚本、随机化\\传感器与故障\end{minipage}} &
+\fbox{\begin{minipage}{0.18\textwidth}\centering 训练、SIL\\回归与现场复现\end{minipage}}
+\end{tabular}
+\caption{仿真资产进入工程闭环的分层链路。每层都应有版本、校准证据和适用边界。}
+\label{fig:simulation-asset-pipeline}
+\end{figure}
+
+数字孪生参数可由实测轨迹辨识：
+\begin{equation}
+\phi^*=\arg\min_{\phi}\sum_{k}
+\left\|\boldsymbol y^{\mathrm{real}}_k-
+\boldsymbol y^{\mathrm{sim}}_k(\phi)\right\|_{\boldsymbol W}^2
++\lambda R(\phi).
+\label{eq:twin-calibration}
+\end{equation}
+必须报告激励轨迹、观测变量和参数可辨识性。多个摩擦/阻尼组合可能产生相近轨迹；得到一个低残差解不代表参数具有真实物理意义。
+
+\section{场景生成要保持任务因果结构}
+
+参数化场景不只是随机摆物体。生成器需要满足可达性、稳定放置、无初始穿透、任务谓词、视野与安全约束，并记录随机种子。生成失败的场景不能静默重采样，否则训练分布会偏向“容易生成”的情况。
+
+\begin{lstlisting}[caption={带约束和 provenance 的场景生成教学伪代码}]
+def generate_scene(template, seed, distributions):
+    rng = Random(seed)
+    scene = instantiate_versioned_assets(template.asset_manifest)
+    params = sample_mass_friction_lighting_latency(rng, distributions)
+    apply_parameters(scene, params)
+    place_objects_with_task_constraints(scene, template.task_graph, rng)
+    if has_penetration(scene) or not task_reachable(scene):
+        return RejectedScene(seed, params, reason="invalid_geometry_or_task")
+    settle(scene, duration=template.settle_time)
+    if not stable(scene):
+        return RejectedScene(seed, params, reason="unstable_after_settle")
+    return Scenario(scene, seed, params, template.version,
+                    engine_version=ENGINE_VERSION)
+\end{lstlisting}
+
+合成数据还需防止标签“过于完美”：真实分割边界、深度孔洞、曝光、运动模糊和时间延迟都不等于引擎 ground truth。当前 Isaac Sim 文档明确区分物理 ground truth 与后处理噪声\cite{nvidia2026isaacsim}；是否加入噪声、噪声是否经过实测校准必须记录。
+
+\section{接触、摩擦与传感器是主要失真源}
+
+\begingroup
+\hbadness=10000
+刚体接触包含离散事件、摩擦锥近似、求解容差和时间步依赖。柔性物体、线缆、织物、吸盘和颗粒更难。若策略利用仿真器特有的穿透或高频抖动，训练回报会提高而现实失败。域随机化通过变化视觉与动力学参数扩大训练分布\cite{tobin2017domainrandomization,peng2018dynamicsrandomization}，但随机范围不应替代校准：范围过窄不覆盖现实，过宽则让策略保守或学习错误不变量。
+\endgroup
+
+建议把差距拆为参数差距、结构差距和观测差距。参数差距可校准或随机化；结构差距如刚体模型无法表达软接触，不能靠扩大摩擦范围修复；观测差距需传感器噪声、延迟和缺失模型。
+
+\section{仿真如何进入测试与故障复现}
+
+训练使用随机场景，发布回归应使用冻结场景集；现场故障则从第 26 章 episode 提取机器人状态、对象位姿、控制器版本和事件时间线，重建最小可复现场景。若精确复现不可能，应明确保持了哪些因果条件，例如“延迟突增后抓取目标过期”，而非声称像素级数字孪生。
+
+仿真测试结果按三类记录：仿真内通过；需要真机确认；已由配对真机试验验证。只有第三类能支持特定现实结论，且有效期受硬件与软件版本限制。
+
+\section{知识小结与综述判断}
+
+仿真的价值来自可控、可重复和可观测，而不是默认“逼真”。平台选型、资产分层、参数校准、场景约束、传感/接触边界和版本化回归共同决定证据强度。综述判断是：如果一个仿真资产没有 engine、参数、种子、任务脚本和与现实的误差记录，它最多是演示场景，不能称数字孪生或回归基线。

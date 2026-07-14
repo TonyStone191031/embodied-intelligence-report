@@ -1,0 +1,94 @@
+\chapter{世界模型、环境表征与可预测状态}
+\label{chap:world-models}
+
+\section{先回答：模型预测什么，供谁决策}
+
+“世界模型”常被泛化为任何能生成未来画面的模型。本章采用更严格的系统定义：若模型学习环境在动作作用下的状态转移，并且预测结果实际进入动作选择、风险评估或恢复，它才是决策链中的世界模型。高保真仿真器、控制器内部动力学模型、视频生成器和语义表征模型都可能提供资产，但用途不同。
+
+\begin{table}[H]
+\centering
+\caption{四类易被混称为世界模型的系统}
+\label{tab:world-model-types}
+\begin{tabularx}{\textwidth}{p{0.17\textwidth}YYYY}
+\toprule
+类型 & 主要输入/输出 & 优化目标 & 决策接入方式 & 典型盲区 \\
+\midrule
+物理仿真器 & 状态、动作 $\to$ 数值轨迹 & 物理一致与数值稳定 & 离线训练、测试、MPC & 资产与现实偏差 \\
+控制模型 & 局部状态、控制 $\to$ 短期状态 & 局部预测误差 & 高频优化与稳定控制 & 长期语义变化 \\
+视频生成模型 & 图像、条件 $\to$ 未来帧 & 感知似然或生成质量 & 候选可视化、表征学习 & 动作可控性与物理可行性 \\
+决策世界模型 & 历史、动作 $\to$ 潜状态/奖励/终止 & 决策充分的预测 & 想象 rollout、价值或风险 & 模型偏差被策略利用 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{潜状态空间：从观测重建到动作条件转移}
+
+对观测 $\bm{o}_t$、动作 $\bm{a}_t$ 和潜状态 $\bm{z}_t$，典型结构分解为
+\begin{align}
+\bm{z}_t &\sim q_\phi(\bm{z}_t\mid \bm{z}_{t-1},\bm{a}_{t-1},\bm{o}_t),\\
+\tilde{\bm{z}}_{t+1} &\sim p_\theta(\bm{z}_{t+1}\mid \bm{z}_t,\bm{a}_t),\\
+\hat{\bm{o}}_t &\sim p_\theta(\bm{o}_t\mid\bm{z}_t),\qquad
+(\hat r_t,\hat c_t)=g_\theta(\bm{z}_t).
+\label{eq:latent-world-model}
+\end{align}
+$q_\phi$ 把新观测吸收到后验状态，$p_\theta$ 在没有未来观测时执行想象转移，$g_\theta$ 预测奖励和继续概率。PlaNet 用潜动力学从像素执行规划\cite{hafner2019planet}；DreamerV3 则在学习的世界模型中想象未来并训练 actor--critic\cite{hafner2023dreamerv3}。
+
+潜状态的目标不是压缩率最大，而是保留决策所需变量。重建损失偏爱占像素面积大的背景，接触建立、摩擦变化或细小障碍却可能只占少数像素。可增加奖励、终止、接触和约束违反等辅助头，但每个头都会把训练数据中的标注偏差带入状态。
+
+\begin{figure}[H]
+\centering
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c}
+\fbox{\begin{minipage}{0.16\textwidth}\centering 历史观测\\与状态包\end{minipage}} &
+\fbox{\begin{minipage}{0.15\textwidth}\centering 后验潜状态\\$\bm z_t$\end{minipage}} &
+\fbox{\begin{minipage}{0.17\textwidth}\centering 候选动作下\\想象 rollout\end{minipage}} &
+\fbox{\begin{minipage}{0.18\textwidth}\centering 回报、风险\\与终止预测\end{minipage}}
+\end{tabular}
+\caption{世界模型进入闭环的最小链路。若最后的预测不改变候选动作排序，模型只是辅助表征而非在线决策组件。}
+\label{fig:world-model-decision-loop}
+\end{figure}
+
+\section{多步 rollout：模型误差如何累积}
+
+候选动作序列 $\bm{a}_{t:t+H-1}$ 的风险调整目标可写为
+\begin{equation}
+J=\mathbb{E}\!\left[\sum_{k=0}^{H-1}\gamma^k \hat r_{t+k}\right]
+-\lambda\sum_{k=1}^{H}u(\tilde{\bm z}_{t+k})
+-\rho\Pr(\text{constraint violation}),
+\label{eq:risk-aware-imagination}
+\end{equation}
+其中 $u(\cdot)$ 是模型集成分歧、预测方差或分布外分数。$H$ 越长并不必然越好：一步小偏差会通过策略选择进入未见区域，随后模型可能给出高回报但不真实的“幻想”。因此工程系统常采用短视窗重规划、真实观测校正和不确定性阈值，而不是一次生成完整长轨迹。
+
+\begin{lstlisting}[caption={带不确定性和硬约束的想象规划教学伪代码}]
+best = None
+for action_sequence in propose_candidates(state):
+    latent = world_model.encode(state)
+    score, rejected = 0.0, False
+    for action in action_sequence:
+        latent_ensemble = world_model.predict_ensemble(latent, action)
+        reward = mean_reward(latent_ensemble)
+        uncertainty = ensemble_disagreement(latent_ensemble)
+        if uncertainty > U_MAX or predicts_hard_violation(latent_ensemble):
+            rejected = True
+            break
+        score += reward - RISK_WEIGHT * uncertainty
+        latent = mean_latent(latent_ensemble)
+    if not rejected and (best is None or score > best.score):
+        best = Candidate(action_sequence, score)
+return best.first_action if best else request_safe_recovery()
+\end{lstlisting}
+
+\section{像素生成、JEPA 与抽象预测的目标差异}
+
+像素生成要求解释纹理、光照和背景，优点是可视化直观，代价是大量容量用于与动作无关的细节。JEPA 类方法在表征空间预测被遮挡区域；I-JEPA 明确采用非生成式目标，由上下文块预测目标块的表征\cite{assran2023ijepa}。这能学习语义表征，但原始 I-JEPA 没有动作条件、奖励或终止变量，不能因“会预测表征”就直接称为机器人动力学世界模型。
+
+抽象预测还可以面向对象关系、接触模式或任务谓词。例如“杯子在托盘上”比每个像素更适合长时程规划；但抽象器若漏掉杯沿裂纹，规划器看不到安全风险。可靠系统往往同时维护多尺度状态：控制层使用连续局部模型，任务层使用对象/谓词状态，视觉模型提供更新证据。
+
+\section{怎样证明世界模型真的有用}
+
+有效证据至少包含三层：一是单步与多步预测在任务相关变量上的校准误差；二是接入规划后相对无模型、真实模型或消融基线的成功率与样本效率；三是分布外、接触突变和传感缺失时的风险与回退。只展示逼真的未来视频不能证明控制收益，只展示平均回报也不能说明失败是否来自模型、规划器或执行器。
+
+\section{知识小结与综述判断}
+
+世界模型把“当前状态”扩展为“候选动作下的可预测状态”。其技术主线是后验编码、动作条件转移、任务相关预测和想象决策。综述判断是：真正的分水岭不在模型是否生成视频，而在预测是否具有动作条件、是否传播不确定性、是否进入闭环，并能在模型不可信时触发真实观测校正或安全恢复。
+

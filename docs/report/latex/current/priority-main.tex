@@ -1,0 +1,27 @@
+\documentclass[UTF8,a4paper,12pt,openany]{ctexbook}
+
+\input{metadata.tex}
+\newcommand{\ReportBibStyle}{gb7714-2015}
+\input{preamble.tex}
+
+\title{\ReportTitle\ v0.3 优先正式章节}
+\author{\ReportAuthor}
+\date{2026-07-14}
+
+\begin{document}
+\frontmatter
+\maketitle
+\chapter*{装配说明}
+本入口装配已经完成正式编写的第 6 章与第 23 章，用于两章的引用、图像、代码和版面验收。两章是 v0.3 正式章节源；在第二、第六部分的其余章节完成迁移前，本入口不替换全书 \texttt{main.tex}，也不把旧 27 部分中的其他章节声明为 v0.3 完成稿。
+\tableofcontents
+
+\mainmatter
+\setcounter{chapter}{5}
+\input{chapters-v0.3/06-动力学、接触与柔顺控制.tex}
+\setcounter{chapter}{22}
+\input{chapters-v0.3/23-代表性VLA的设计比较.tex}
+
+\backmatter
+\chapter{References}
+\printbibliography[heading=none]
+\end{document}

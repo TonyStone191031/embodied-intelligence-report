@@ -1,0 +1,91 @@
+\chapter{Transformer 与动作序列建模}
+\label{chap:transformer-action-sequence}
+
+\section{注意力计算：内容寻址而非时间模型本身}
+
+给定序列表示 $X\in\mathbb R^{L\times d}$，线性投影得到 $Q=XW_Q,K=XW_K,V=XW_V$，scaled dot-product attention 为
+\begin{equation}
+\operatorname{Attn}(Q,K,V)=
+\operatorname{softmax}\left(\frac{QK^\top}{\sqrt{d_k}}+M\right)V.
+\label{eq:scaled-attention}
+\end{equation}
+$M$ 可屏蔽未来 token 或无效 padding。除以 $\sqrt{d_k}$ 是为了避免维度增大时点积方差过大，使 softmax 过早饱和。多头注意力让不同子空间独立计算，再拼接投影。Transformer 用自注意力与前馈网络取代循环结构，但顺序必须由位置编码、因果掩码或时间戳显式提供\cite{vaswani2017attention}。
+
+注意力权重不是因果解释。一个 token 权重高只说明当前计算中的相似性和归一化结果；层间残差、MLP 和后续头还会改变贡献。机器人报告不应把热力图直接写成“模型关注了正确物体”的行为证据。
+
+\section{机器人序列如何组织}
+
+机器人输入可能包括语言 $l$、图像 patch $v_t$、本体状态 $p_t$、触觉 $h_t$ 和历史动作 $a_{t-1}$。一种交错序列为
+\begin{equation}
+[l_{1:m},v_0,p_0,h_0,a_0,v_1,p_1,h_1,a_1,\ldots].
+\end{equation}
+另一种做法先在每个时刻融合多模态，再把时刻 latent 组成时间序列。前者保留细粒度交互但 token 多，后者计算便宜但连接器成为信息瓶颈。
+
+\begin{figure}[H]
+\centering
+\begin{tabular}{c@{\quad}c@{\quad}c@{\quad}c@{\quad}c}
+\fbox{语言前缀} & \fbox{$v_{t-1},p_{t-1}$} & \fbox{$a_{t-1}$} & \fbox{$v_t,p_t$} & \fbox{预测 $a_t$}
+\end{tabular}
+\caption{机器人因果序列的最小时间轴。作者教学绘制；每个观测块还必须携带采样时间，排列顺序不能修复时间戳错误。}
+\label{fig:robot-causal-token-timeline}
+\end{figure}
+
+位置编码只区分槽位，不等于物理时间。相机 30 Hz、本体 200 Hz、触觉 1 kHz 时，按到达顺序拼接会把通信抖动误写成动作因果。应先按测量时间对齐或保留连续时间嵌入，并标注缺帧、插值和状态新鲜度。
+
+\section{自回归目标与动作序列的特殊性}
+
+因果模型最小化
+\begin{equation}
+\mathcal L_{\mathrm{AR}}=-\sum_{i=1}^{L}
+\log p_\theta(y_i\mid y_{<i},c).
+\label{eq:autoregressive-loss}
+\end{equation}
+文本 token 错误通常仍可在后续文本中修正；动作 token 会改变世界，后续条件分布随之变化。动作还具有连续单位、速度/加速度约束和不可逆风险。因而相同的交叉熵并不意味着相同的闭环代价。
+
+连续动作可直接回归，也可量化成离散 token。RT-1 把机器人动作离散化并与图像/语言条件一起建模\cite{brohan2022rt1}。离散化便于复用语言模型头，但每维 bin 宽决定物理分辨率；独立量化各维又忽略关节/末端耦合。第 12 章讨论扩散和流式连续动作，第 23 章比较代表性 VLA 的动作接口。
+
+teacher forcing 训练时使用真实前缀，部署时使用模型先前输出，形成 exposure bias。动作块减少自回归步数，却延长开环执行窗口。评估必须报告 rollout 成功和恢复，而非只给 token 准确率。
+
+\section{复杂度、KV cache 与实时性}
+
+标准全注意力计算和注意力矩阵内存约为 $O(L^2d)$ 与 $O(L^2)$。自回归推理若缓存各层历史 key/value，新 token 不必重算全部前缀，但缓存内存约随 $O(N_{\mathrm{layer}}Ld)$ 增长。多相机 patch、长历史和大模型层数会快速耗尽显存。
+
+设控制频率 50 Hz，即周期 20 ms；端到端推理 100 ms 意味着动作使用至少 5 个周期前的状态。即使平均延迟 18 ms，99.9 分位 80 ms 也可能触发接触失败。应分别测量编码、连接器、解码、后处理和通信时间，并报告尾延迟。
+
+\begin{lstlisting}[caption={带时间戳与 KV cache 失效条件的因果推理教学伪代码}]
+tokens, stamps = encode_new_observations(sensor_packet)
+if stale(stamps) or calibration_version_changed():
+    kv_cache.clear(); controller.safe_hold()
+tokens = append_time_embeddings(tokens, stamps)
+logits, kv_cache = model.decode(tokens, kv_cache=kv_cache)
+action = project_units_limits(decode_action(logits))
+if inference_deadline_missed(): use_backup_controller()
+else: execute(action)
+\end{lstlisting}
+
+缓存不是永远有效的。机器人重定位、任务切换、外参更新或安全回滚后，旧 KV 中的状态语义可能与当前世界冲突。需要缓存版本、任务 ID 和物理状态重置条件。
+
+\section{文本序列与动作序列的证据差异}
+
+\begin{table}[H]
+\centering
+\caption{文本与机器人动作序列的关键差异}
+\label{tab:text-action-sequence-differences}
+\begin{tabularx}{\textwidth}{p{0.18\textwidth}YY}
+\toprule
+维度 & 文本生成 & 动作生成 \\
+\midrule
+token 语义 & 离散符号，错误多可继续阅读 & 连续物理量或量化量，改变环境状态 \\
+时间 & 序列位置常足够 & 测量时间、控制周期和延迟直接影响可执行性 \\
+约束 & 语法/事实约束为主 & 关节、碰撞、动力学、接触与安全约束 \\
+反馈 & 输出后通常无物理反馈 & 每步观测闭环，状态分布由动作改变 \\
+评测 & 困惑度、准确率、偏好 & 任务成功、约束违反、延迟、恢复与损坏 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{知识小结与综述判断}
+
+知识小结：注意力做内容寻址，位置/时间编码与掩码赋予顺序；自回归目标预测下一个 token；KV cache 用内存换取增量推理。机器人序列还必须组织多率传感、动作单位和状态时间戳。
+
+综述判断：把动作写成 token 只统一了软件接口，没有消除物理约束。Transformer 的主要价值是灵活融合长序列条件；其主要工程代价是 token 预算、尾延迟和缓存一致性。任何“实时”结论都应给出完整控制周期和尾分位，而不是只报模型前向平均值。

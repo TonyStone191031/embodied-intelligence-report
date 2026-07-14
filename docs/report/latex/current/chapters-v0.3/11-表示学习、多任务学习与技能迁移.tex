@@ -1,0 +1,100 @@
+\chapter{表示学习、多任务学习与技能迁移}
+\label{chap:representation-transfer}
+
+\section{表示的职责与本章边界}
+
+表示 $z=f_\theta(o)$ 的价值不在于“维度更小”，而在于保留下游决策需要的信息，同时抑制光照、背景等无关变化。多任务学习进一步让任务条件 $c$ 与共享表示共同决定动作或价值。本文后续第 14--17 章将讲多模态编码器和基础模型接口；本章只研究表示怎样通过自监督、任务共享和迁移被训练，以及何时共享反而有害。
+
+\begin{figure}[H]
+\centering
+\begin{tabular}{c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c}
+\fbox{多模态观测 $o$} & \fbox{共享表示 $z=f_\theta(o)$} &
+\begin{tabular}{c}\fbox{任务头 $g_1(z,c_1)$}\\[4pt]\fbox{任务头 $g_2(z,c_2)$}\\[4pt]\fbox{技能/策略头}\end{tabular}
+\end{tabular}
+\caption{共享表示与任务专用接口。作者教学绘制；共享编码器减少重复学习，但不保证各任务梯度相容。}
+\label{fig:shared-representation-heads}
+\end{figure}
+
+\section{自监督表示：什么被视为相同}
+
+对比学习用正样本对 $(o,o^+)$ 和负样本集合学习相似性。InfoNCE 的一类写法为
+\begin{equation}
+\mathcal L_{\mathrm{NCE}}
+=-\log\frac{\exp(\operatorname{sim}(z,z^+)/\tau)}
+{\exp(\operatorname{sim}(z,z^+)/\tau)+\sum_j\exp(\operatorname{sim}(z,z_j^-)/\tau)}.
+\label{eq:infonce}
+\end{equation}
+温度 $\tau$ 控制分布尖锐度。关键选择不是公式，而是正样本语义：同一图像的颜色增强鼓励光照不变性，相邻视频帧鼓励短时一致性，同一任务不同视角鼓励视角不变性。若把接触前后两帧误当正样本，表示可能主动丢掉任务关键的接触变化。
+
+重建式目标要求从 $z$ 恢复输入或遮蔽部分，易保留细节，但也可能把容量花在背景像素。时序预测要求 $z_t$ 预测未来 $z_{t+k}$，可学习动力相关信息，却可能忽略对短期预测无帮助但对任务重要的语义。不存在脱离下游任务的“通用最好表示”。
+
+R3M 使用大规模人类第一视角视频，并结合时间对比、视频--语言对齐和稀疏正则学习机器人操作视觉表示；论文在多项模拟和真实操作任务上评估冻结特征的数据效率\cite{nair2022r3m}。这说明人类视频可提供可迁移视觉先验，但不证明其表示天然包含机器人本体状态、力觉或精确动作坐标。
+
+\section{多任务目标、任务条件与负迁移}
+
+设任务 $i$ 的损失为 $\mathcal L_i$，共享参数目标通常写为
+\begin{equation}
+\mathcal L(\theta,\phi_{1:m})=\sum_{i=1}^{m}w_i
+\mathbb E_{(o,a)\sim\mathcal D_i}
+[\ell_i(g_{\phi_i}(f_\theta(o),c_i),a)].
+\label{eq:multitask-loss}
+\end{equation}
+$w_i$ 同时受到任务重要性、数据量、损失量纲和采样频率影响。若简单按样本均匀采样，大数据任务会支配共享编码器；若按任务均匀采样，小任务又可能被过采样。
+
+共享是否冲突可先看梯度余弦
+\begin{equation}
+\rho_{ij}=\frac{g_i^\top g_j}{\|g_i\|_2\|g_j\|_2},
+\qquad g_i=\nabla_\theta\mathcal L_i.
+\label{eq:gradient-cosine}
+\end{equation}
+$\rho_{ij}<0$ 表示沿任务 $i$ 的下降方向可能增大任务 $j$ 的一阶损失。以 $g_1=(1,0)$、$g_2=(-0.8,0.2)$ 为例，点积为 $-0.8$；直接求和得到 $(0.2,0.2)$，显著削弱任务 1 的更新。这只是局部诊断，不代表两个任务永远不相容，但比笼统声称“共享促进泛化”更可检验。
+
+MT-Opt 在大规模真实机器人多任务数据上使用任务条件化和数据共享，展示了相关任务数据可帮助长尾任务\cite{kalashnikov2021mtopt}。其结论依赖任务族、数据规模和统一机器人接口；把不同本体、不同动作单位的数据直接混合，并不会自动得到跨本体技能。
+
+\section{技能表示与跨本体迁移}
+
+技能可表示为离散 ID、语言条件、连续潜变量 $z_s$ 或一段闭环策略。连续技能潜变量常通过编码器从轨迹推断，再由低层策略执行 $\pi(a\mid s,z_s)$。若潜变量只优化重建动作，它可能编码操作者身份或速度，而不是可组合的任务语义；需要任务成功、可预测性或互信息约束来校准含义。
+
+跨本体迁移至少要对齐三类接口：观测语义、动作语义和可达能力。把末端增量作为中间接口可弱化关节数差异，但不同机器人工作空间、负载、夹爪和控制频率仍不同。共享策略应显式接收本体描述或使用本体专用适配器，并在第~\ref{chap:kinematics-lie}章定义的任务空间与关节空间之间做受约束映射。
+
+\begin{table}[H]
+\centering
+\caption{表示和迁移时常见参数复用方式}
+\label{tab:representation-transfer-strategies}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{0.17\textwidth}YYYY}
+\toprule
+方式 & 更新范围 & 数据需求 & 优点 & 主要风险 \\
+\midrule
+冻结编码器 & 只训任务头 & 少 & 稳定、便于比较 & 表示缺少动作/本体信息 \\
+全量微调 & 全部参数 & 多 & 适应能力强 & 灾难遗忘、过拟合 \\
+适配器/低秩更新 & 小量任务参数 & 中 & 保留共享骨干 & 容量不足或任务隔离 \\
+共享骨干多头 & 编码器与各头 & 多任务同步 & 数据复用 & 梯度冲突、任务不平衡 \\
+本体条件化 & 共享策略加本体描述 & 跨本体配对/覆盖 & 接口统一 & 未见本体外推不可靠 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{表示坍缩与可审计诊断}
+
+表示坍缩指不同输入映射到近似常数。即使没有完全坍缩，也可能出现任务条件被忽略、少数维度支配或背景捷径。诊断应包含特征方差/秩、任务线性探针、跨场景最近邻、遮挡/背景干预和下游闭环性能。只展示 t-SNE 图不能证明可控性或因果相关性。
+
+\begin{lstlisting}[caption={多任务共享训练中的梯度冲突监控教学伪代码}]
+task_batches = sampler.balanced_batches()
+task_grads = []
+for task, batch in task_batches:
+    loss = task_loss(task, batch)
+    task_grads.append(grad(loss, shared_encoder))
+conflict = pairwise_cosine(task_grads)
+log(conflict, feature_rank(shared_encoder), per_task_metrics)
+if persistent_negative_transfer(conflict, per_task_metrics):
+    split_adapter_or_reweight_tasks()
+apply_joint_update(task_grads)
+\end{lstlisting}
+
+冻结、微调和多任务训练必须用相同数据预算、增强和任务头容量比较。否则骨干差异会与训练资源混在一起。表示的最终证据不是预训练损失，而是在未见场景和受控干预下，任务成功是否更稳、需要的标注是否更少。
+
+\section{知识小结与综述判断}
+
+知识小结：对比、重建和时序预测分别规定了不同的不变性；多任务目标通过共享参数复用数据，也可能因梯度冲突和任务不平衡产生负迁移；技能迁移还要求观测、动作和本体能力对齐。
+
+综述判断：所谓“通用表示”必须附带任务集合和接口条件。一个在图像语义上强的编码器未必适合毫米级接触控制；一个在同构机械臂间共享的策略也未必能外推到新夹爪。合理做法是把共享范围当作实验变量，逐层证明哪些知识可复用、哪些必须由任务或本体适配器承担。

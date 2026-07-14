@@ -1,0 +1,57 @@
+\chapter{企业能力与交付证据矩阵}
+\label{chap:company-evidence-matrix}
+
+\section{比较对象不是公司名，而是可交付系统}
+
+企业比较若从融资额、视频热度或参数表开始，结论会被披露策略支配。本章把“能力”限定为：企业能否在给定任务、现场和责任边界内，持续交付合格产出。统一记录任务单元、模型与数据、本体、客户部署、制造、运维、商业安排、风险和证据日期；缺失字段保留为空，不用宣传语补齐。
+
+部署证据分五级：E0 为剪辑或现场 demo；E1 为指定工位试验；E2 为客户确认、采购或付费安排；E3 为跨班次持续运行并给出暴露量；E4 为跨客户/站点重复交付且存在可审计的可靠性和经济性。等级衡量公开证据，不等于企业真实能力。
+
+\begin{figure}[H]
+\centering
+\scriptsize
+\begin{tabular}{c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c}
+\fbox{E0 展示} & \fbox{E1 工位试验} & \fbox{E2 客户/合同} & \fbox{E3 持续运行} & \fbox{E4 重复/审计}
+\end{tabular}
+\caption{交付证据梯度。升级需要新增分母，而不是更换宣传措辞。}
+\label{fig:delivery-evidence-ladder}
+\end{figure}
+
+\section{五个样本在同一字段下的公开证据}
+
+Agility 与 GXO 在 2024 年公布多年期 RaaS 安排，Digit 在仓内把 AMR 上的周转箱转移到输送线；企业随后公开称累计搬运超过 10 万箱\cite{agility2024gxo,agility2026totes}。前者提供客户、任务和商业安排，后者提供累计暴露量，但仍未公开排程小时、介入分钟和独立审计。
+
+Figure 对 BMW 工位披露 1,250 小时运行、9 万余零件装载和 3 万辆车相关产出，并说明前臂是主要硬件失效点\cite{figure2025bmw}；2026 年又披露 Figure 03 的产量、在制品检查点和首过良率\cite{figure2026production}。这组材料比 demo 多出运行和制造分母，但数值仍来自供应商。
+
+Apptronik 与 Mercedes-Benz 的 2024 材料明确使用“pilot”，与 Jabil 的 2025 合作同时包含试用和代工扩产意图\cite{apptronik2024mercedes,apptronik2025jabil}。因此可确认客户合作和制造伙伴，不能据此声称已经形成连续生产。UBTECH 的港交所公告披露 Walker S1/Walker C 小批量采购合同和预付款，2025 年年报进一步报告产能与工业场景进展\cite{ubtech2025contract,ubtech2025annual}；合同事实强于展示，产能和订单量仍需与实际交付、验收和续购分开。
+
+Unitree 官方材料称 G1 推出量产版、H1 已量产，并展示汽车工厂搬运等场景\cite{unitree2024wrc}。公开材料能支持“平台可购买/量产与场景展示”，却缺少同口径的客户运行分母，故不把平台扩散直接写成自主任务交付。
+
+\begin{table}[H]
+\begingroup\hbadness=10000
+\centering\small
+\caption{代表企业公开证据矩阵（截至 2026-07-14）}
+\label{tab:company-evidence-matrix}
+\begin{tabularx}{\textwidth}{p{0.12\textwidth}p{0.17\textwidth}p{0.19\textwidth}p{0.16\textwidth}Y}
+\toprule
+样本 & 任务/本体 & 最高公开证据 & 制造/运维线索 & 不可外推边界 \\
+\midrule
+Agility & Digit；仓内料箱转运 & E3：客户 RaaS、累计箱数 & Arc 平台、现场集成 & 无统一 uptime、介入和经济性 \\
+Figure & F.02/F.03；汽车上料 & E3：运行小时、零件与产出自报 & BotQ、失效点和良率自报 & 单客户/任务，缺独立审计 \\
+Apptronik & Apollo；制造试点 & E2：客户 pilot 与制造合作 & Jabil 生产合作 & 未披露连续运行分母 \\
+UBTECH & Walker；汽车制造 & E2：采购、预付款与年报披露 & 产能与量产自报 & 订单、交付、验收不可互换 \\
+Unitree & H1/G1；平台与搬运展示 & E1--E2：量产产品和场景材料 & 平台可得性 & 缺客户持续运行和运维数据 \\
+\bottomrule
+\end{tabularx}
+\endgroup
+\end{table}
+
+\section{模型、本体、制造和运维不能互相替代}
+
+模型视频回答“某版本在某初态能否产生动作”；本体规格回答负载、速度和接口上限；制造信息回答能否稳定重复制造；客户数据才回答合格产出与人工成本。四者是串联系统，任何一项都不能代替其他项。特别是“年产能”是设备与节拍能力，不是实际产量；“订单”不是收入确认；“进入工厂”可能只是演示、实训或隔离试验。
+
+最低可比披露应包括软件/硬件版本、任务与对象分布、排程小时、完成与合格数、人工介入、停机原因、安全暴露量、备件与更新时间。没有这些分母时，作者只判断证据成熟度，不排名技术优劣。
+
+\section{知识小结与综述判断}
+
+企业证据应沿展示、试验、合同、持续运行和重复交付逐级积累。五个样本分别显示任务聚焦、模型--本体整合、制造合作、采购与平台可得性，但公开口径仍不完整。综述判断是：当前最稀缺的不是机器人视频，而是跨版本、跨班次、含人工和失败分母的客户级数据；在其出现前，企业矩阵应保持“可核事实 + 明确缺口”，不制造总排名。

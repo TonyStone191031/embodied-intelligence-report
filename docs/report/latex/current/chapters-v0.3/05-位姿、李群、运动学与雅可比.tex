@@ -1,0 +1,183 @@
+\chapter{位姿、李群、运动学与雅可比}
+\label{chap:kinematics-lie}
+
+\section{学习目标、前置知识与问题设定}
+
+本章回答一个贯穿全书的问题：高层系统给出的“把末端向左移动 3 cm 并旋转 10$^\circ$”如何变成定义明确、可计算、能被关节执行的量。读者应能区分坐标变换与物体运动，能在旋转矩阵、四元数和李代数增量之间选择接口，能从关节链计算末端位姿与雅可比，并能解释逆运动学不收敛究竟来自不可达、奇异、约束冲突还是数值设置。
+
+前置知识是第~\ref{chap:math-computation} 章的矩阵乘法、奇异值、条件数和局部线性化。本章不讲力矩和接触力，它们在第~\ref{chap:dynamics-contact-compliance} 章主讲；也不比较 VLA 的动作 token，它们最终仍须经过本章的位姿或关节接口落到机器人上。
+
+\section{坐标系、齐次变换与变换链}
+
+约定 ${}^{A}p\in\mathbb{R}^3$ 表示点 $p$ 在坐标系 $A$ 中的坐标，${}^{A}T_B$ 表示把 $B$ 系坐标变换到 $A$ 系。齐次变换为
+\begin{equation}
+{}^{A}T_B=
+\begin{bmatrix}
+{}^{A}R_B & {}^{A}t_B\\
+0_{1\times3} & 1
+\end{bmatrix}\in SE(3),\qquad
+\begin{bmatrix}{}^{A}p\\1\end{bmatrix}
+={}^{A}T_B\begin{bmatrix}{}^{B}p\\1\end{bmatrix}.
+\label{eq:homogeneous-transform}
+\end{equation}
+${}^{A}R_B\in SO(3)$ 无单位，${}^{A}t_B$ 的单位通常为 m。上标与下标不是装饰：中间坐标系必须相消，因而
+\begin{equation}
+{}^{W}T_E={}^{W}T_B\,{}^{B}T_1\cdots{}^{n}T_E.
+\label{eq:transform-chain}
+\end{equation}
+若把某一项写反，矩阵维度仍可能合法，但几何语义已经错误。Modern Robotics 将刚体运动、运动学、雅可比和控制放在统一 $SE(3)$ 语言下，正是为了让这种接口关系可计算且可检查\cite{lynch2017modern,modern_robotics}。
+
+取二维简化例：$B$ 系相对 $W$ 系旋转 $90^\circ$，并平移 $(1,0)$ m；点在 $B$ 系为 $(1,0)$ m。旋转后该点相对 $B$ 原点位于 $(0,1)$ m，再加平移得 ${}^{W}p=(1,1)$ m。若先平移点再旋转，会得到不同结果；“旋转和平移差不多可以交换”只在特定小量近似中成立。
+
+\begin{figure}[H]
+\centering
+\small
+\fbox{\parbox{0.16\textwidth}{\centering 关节状态\\$q$}}
+$\xrightarrow{\text{正运动学}}$
+\fbox{\parbox{0.19\textwidth}{\centering 当前位姿\\$T(q)$}}
+$\xrightarrow{\log(T^{-1}T_d)}$
+\fbox{\parbox{0.17\textwidth}{\centering 位姿误差\\$e\in\mathbb{R}^6$}}
+$\xrightarrow{J^\#}$
+\fbox{\parbox{0.17\textwidth}{\centering 关节增量\\$\Delta q$}}
+$\xrightarrow{\operatorname{integrate}}$
+\fbox{\parbox{0.11\textwidth}{\centering 新状态}}
+\caption{从关节状态到李群位姿误差、雅可比逆和流形积分的闭环运动学计算链。作者依据 Modern Robotics 与 Pinocchio 官方逆运动学示例改绘\cite{lynch2017modern,pinocchio340ik}。}
+\label{fig:kinematic-compute-chain}
+\end{figure}
+
+\section{旋转矩阵、欧拉角与四元数}
+
+旋转矩阵集合
+\begin{equation}
+SO(3)=\{R\in\mathbb{R}^{3\times3}\mid R^\top R=I,\ \det R=1\}
+\label{eq:so3-definition}
+\end{equation}
+有 9 个元素但只有 3 个自由度。正交约束使它可以直接作用于向量并稳定组合，但数值积分后需要重新正交化。欧拉角只用 3 个数，适合人机界面，却依赖旋转顺序并在特定姿态发生参数奇异；同一组“roll、pitch、yaw”若未说明内禀/外禀和轴顺序，并不是完整数据。
+
+单位四元数 $q=[q_w,q_x,q_y,q_z]^\top$ 满足 $\lVert q\rVert=1$。它避免欧拉角的参数奇异，插值与积分也更方便，但 $q$ 与 $-q$ 表示同一旋转，比较或学习时必须处理双覆盖。传感器融合中若把四元数四个分量当作无约束欧氏状态直接相加，既可能破坏单位范数，也会把符号跳变误判为大旋转。Solà 对四元数运动学与误差状态的系统说明表明，常见做法是让名义姿态保留在单位四元数上，把小误差放在三维切空间中更新\cite{sola2017quaternion}。
+
+\begin{table}[H]
+\centering
+\caption{旋转表示的接口代价与典型失效}
+\label{tab:rotation-representations}
+\small
+\begin{tabularx}{\textwidth}{p{0.16\textwidth}p{0.15\textwidth}p{0.24\textwidth}p{0.23\textwidth}Y}
+\toprule
+表示 & 存储量 & 主要用途 & 约束/歧义 & 典型失效\\
+\midrule
+欧拉角 & 3 & 人机界面、有限范围标定 & 旋转顺序必须声明 & 万向节锁、跨界跳变\\
+旋转矩阵 & 9 & 坐标变换、组合、几何计算 & $R^\top R=I,\det R=1$ & 数值漂移、冗余优化\\
+单位四元数 & 4 & 插值、惯导、姿态状态 & 单位范数、$q\sim -q$ & 未归一化、符号不连续\\
+李代数增量 & 3 & 局部误差、优化、滤波更新 & 依赖线性化点和对数分支 & 大角度线性化失真\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{李群、指数映射与局部误差}
+
+反对称矩阵算子把 $\omega=[\omega_x,\omega_y,\omega_z]^\top$ 写为
+\begin{equation}
+[\omega]_\times=
+\begin{bmatrix}
+0&-\omega_z&\omega_y\\
+\omega_z&0&-\omega_x\\
+-\omega_y&\omega_x&0
+\end{bmatrix},\qquad [\omega]_\times v=\omega\times v.
+\end{equation}
+$\mathfrak{so}(3)$ 是这些反对称矩阵组成的切空间。指数映射
+\begin{equation}
+R=\operatorname{Exp}(\phi)=\exp([\phi]_\times)
+=I+\frac{\sin\theta}{\theta}[\phi]_\times
++\frac{1-\cos\theta}{\theta^2}[\phi]_\times^2,
+\quad \theta=\lVert\phi\rVert
+\label{eq:rodrigues}
+\end{equation}
+把轴角向量 $\phi$ 转成有限旋转。$\theta\to0$ 时系数应使用级数或专用 `Exp` 实现，直接除以极小 $\theta$ 会产生数值问题。对数映射执行反向操作，但在旋转角接近 $\pi$ 时存在分支和轴方向敏感性。
+
+$SE(3)$ 的切空间增量写作 $\xi=[\rho^\top,\phi^\top]^\top\in\mathbb{R}^6$，其中 $\rho$ 是与平移相关的局部量，$\phi$ 是旋转向量。位姿误差不宜简单写成两个齐次矩阵逐元素相减；更有几何意义的主体误差为
+\begin{equation}
+e=\operatorname{Log}(T(q)^{-1}T_d)^\vee\in\mathbb{R}^6.
+\label{eq:se3-pose-error}
+\end{equation}
+这里 $T(q)^{-1}T_d$ 先表达从当前位姿到目标位姿的相对变换，$\operatorname{Log}$ 再把它拉回局部切空间。左误差 $T_dT(q)^{-1}$ 与右误差 $T(q)^{-1}T_d$ 属于不同参考系；代码中的雅可比表达系必须与误差定义一致。Barfoot 对三维状态估计的处理同样强调，流形状态的扰动坐标是优化与不确定性表达的组成部分，而非实现细节\cite{barfoot2024state}。
+
+\section{正运动学、速度运动学与雅可比}
+
+串联机械臂正运动学把关节向量 $q\in\mathbb{R}^n$ 映射为末端位姿 $T(q)\in SE(3)$。在乘积指数形式下，每个关节用螺旋轴 $S_i\in\mathbb{R}^6$ 表示：
+\begin{equation}
+T(q)=e^{[S_1]q_1}e^{[S_2]q_2}\cdots e^{[S_n]q_n}M,
+\label{eq:poe-forward-kinematics}
+\end{equation}
+$M$ 是零位构型的末端位姿。式~\eqref{eq:poe-forward-kinematics} 输出的位姿进入式~\eqref{eq:se3-pose-error}；对它局部求导得到雅可比，把关节速度映射为末端 twist：
+\begin{equation}
+V=J(q)\dot q,qquad J\in\mathbb{R}^{6\times n}.
+\label{eq:velocity-jacobian}
+\end{equation}
+雅可比上三行和下三行究竟对应角速度还是线速度，取决于库的约定；空间雅可比与主体雅可比也表达在不同坐标系。只抄一个 $6\times n$ 数组而不记录参考系，会让控制方向在姿态变化后悄然错误。
+
+二连杆平面臂的末端位置为
+\begin{equation}
+x=l_1\cos q_1+l_2\cos(q_1+q_2),\qquad
+y=l_1\sin q_1+l_2\sin(q_1+q_2),
+\end{equation}
+因此
+\begin{equation}
+J(q)=
+\begin{bmatrix}
+-l_1\sin q_1-l_2\sin(q_1+q_2)&-l_2\sin(q_1+q_2)\\
+l_1\cos q_1+l_2\cos(q_1+q_2)&l_2\cos(q_1+q_2)
+\end{bmatrix}.
+\label{eq:two-link-jacobian}
+\end{equation}
+取 $l_1=l_2=1$ m、$q_1=30^\circ$、$q_2=60^\circ$，得到末端 $(x,y)=(0.866,1.5)$ m，$J=[[-1.5,-1],[0.866,0]]$ m/rad。若期望末端速度 $[0.01,0]^\top$ m/s，解得有限关节速度；当 $q_2\to0$ 时，机械臂伸直，雅可比两列对某些任务方向失去独立性，最小奇异值趋近 0。
+
+\section{逆运动学、阻尼伪逆与约束}
+
+逆运动学不是一般意义上的矩阵求逆，而是寻找满足 $T(q)\approx T_d$ 且符合关节、碰撞和任务约束的 $q$。闭环迭代可写为
+\begin{equation}
+\Delta q=J^\#e,qquad q_{k+1}=\operatorname{integrate}(q_k,\alpha\Delta q),
+\label{eq:ik-update}
+\end{equation}
+其中 $e$ 来自式~\eqref{eq:se3-pose-error}，$J^\#$ 是广义逆，$\alpha$ 是步长。Moore--Penrose 伪逆在奇异值分解 $J=U\Sigma V^\top$ 下将非零奇异值取倒数；小奇异值会把误差放大为巨大关节速度。阻尼最小二乘改为
+\begin{equation}
+J^\#_\lambda=J^\top(JJ^\top+\lambda^2I)^{-1},
+\label{eq:damped-pseudoinverse}
+\end{equation}
+在弱方向上限制增益。$\lambda$ 增大使更新更稳但残差更大；它不能让不可达目标变得可达，也不能自动满足碰撞约束。
+
+冗余机械臂还可利用零空间：
+\begin{equation}
+\dot q=J^\#V+(I-J^\#J)\dot q_0.
+\label{eq:nullspace-ik}
+\end{equation}
+第一项完成主任务，第二项在局部零空间中优化关节居中、远离限位或避障。但数值阻尼使投影不再严格，多个任务的优先级也可能在奇异附近相互污染。需要硬约束时，应把逆运动学写成带边界的二次规划或非线性优化，而不是继续堆叠伪逆。
+
+\section{官方实现导读：Pinocchio 的闭环逆运动学}
+
+Pinocchio 是面向刚体运动学、动力学及其导数的开源库，其论文描述了正/逆动力学和解析导数等统一接口\cite{carpentier2019pinocchio}。官方 v3.4.0 逆运动学示例按“正运动学—李群误差—雅可比—阻尼求解—流形积分”执行，与图~\ref{fig:kinematic-compute-chain} 对应\cite{pinocchio340ik}。下面保留决定算法行为的核心路径，删除模型创建、显示与打印分支。
+
+\begin{lstlisting}[language=Python,caption={Pinocchio v3.4.0 闭环逆运动学核心路径（BSD-2-Clause；据官方示例节选）},label={lst:pinocchio-clik}]
+pinocchio.forwardKinematics(model, data, q)
+iMd = data.oMi[JOINT_ID].actInv(oMdes)
+err = pinocchio.log(iMd).vector
+if norm(err) < eps:
+    success = True
+    break
+
+J = pinocchio.computeJointJacobian(model, data, q, JOINT_ID)
+J = -pinocchio.Jlog6(iMd.inverse()) @ J
+v = -J.T @ solve(J @ J.T + damp * np.eye(6), err)
+q = pinocchio.integrate(model, q, v * DT)
+\end{lstlisting}
+
+代码第 2 行把目标表达为当前关节系下的相对位姿，第 3 行取 $SE(3)$ 对数误差；第 8 行的 `Jlog6` 把运动学雅可比转换到误差函数的微分；第 9 行对应式~\eqref{eq:damped-pseudoinverse}，但示例变量 `damp` 直接加到 $JJ^\top$，因此它对应公式中的 $\lambda^2$；第 10 行使用库的流形积分，而不是假设所有构型都能用普通向量相加。
+
+\sourceanchor{仓库 \path{stack-of-tasks/pinocchio}；许可证 BSD-2-Clause；release \texttt{v3.4.0}；官方文档 \path{doc/d-practical-exercises/3-invkine.html} 与 \path{examples/inverse-kinematics.py}；符号 \texttt{forwardKinematics}、\texttt{computeJointJacobian}、\texttt{Jlog6}、\texttt{integrate}。2026-07-14 远端 commit 查询受网络连接失败影响，当前以不可变 release tag 固定；冻结前补记解析后的 commit。}
+
+\section{失效诊断、动作接口与知识小结}
+
+逆运动学失败应按可观测信号分类。误差始终很大且关节触限，首先检查目标是否可达；最小奇异值下降、关节速度上升，说明接近机构奇异；误差方向突然翻转，检查四元数符号与对数分支；位置收敛而姿态不收敛，检查线速度/角速度权重和单位；数值收敛但碰撞，说明优化问题没有包含环境约束。把所有失败都归因于“初值不好”会掩盖接口设计错误。
+
+高层策略输出笛卡尔增量时，至少要声明参考系、平移和旋转单位、动作周期、限幅与控制语义。输出关节目标时，则要声明关节顺序、本体版本和位置/速度/力矩模式。第 22 章会比较不同动作表示，但无论动作来自规则、规划器还是 VLA，最终都必须通过这些接口约定进入第 6 章的动力学与控制闭环。
+
+\authorjudgement{李群与雅可比的价值不在于术语先进，而在于它们把有限位姿、局部误差、速度映射和数值迭代连成同一条可审计链。模型可以学习逆运动学的近似，但只要部署仍需要坐标变换、限位、碰撞和实时诊断，这条几何链就不能被一句“端到端输出动作”省略。}

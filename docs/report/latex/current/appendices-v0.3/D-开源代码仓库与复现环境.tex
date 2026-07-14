@@ -1,0 +1,22 @@
+\chapter{开源代码仓库与复现环境}
+\label{app:code-reproduction}
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.16\textwidth}>{\raggedright\arraybackslash}p{0.24\textwidth}>{\raggedright\arraybackslash}p{0.23\textwidth}>{\raggedright\arraybackslash}p{0.24\textwidth}}
+\caption{关键开源入口与复现字段}\label{tab:code-reproduction-index}\\
+\toprule
+项目 & 入口/许可证 & 版本锚点 & 正文用途 \\
+\midrule\endfirsthead
+\toprule 项目 & 入口/许可证 & 版本锚点 & 正文用途 \\
+\midrule\endhead
+Modern Robotics & Northwestern 官方仓库；开源 & 复现时记录 commit & 第 5 章位姿与运动学教学 \\
+Pinocchio & stack-of-tasks/\allowbreak pinocchio；BSD & 3.4.0 API/commit & 第 5、6 章刚体算法接口 \\
+libfranka & frankaemika/\allowbreak libfranka；Apache-2.0 & 0.15 系列/tag & 第 6 章力矩/笛卡尔控制接口 \\
+Octo & octo-models/\allowbreak octo；Apache-2.0 & v1.5/tag & 第 23、25 章模型与推理路径 \\
+OpenVLA & openvla/\allowbreak openvla；MIT & 论文对应 commit/权重 & 第 23--25 章模型加载与动作解码 \\
+ROS 2 Jazzy & docs.ros.org；Apache-2.0 为主 & Jazzy + 包版本 & 第 29 章通信、生命周期与安全 \\
+MuJoCo & google-deepmind/\allowbreak mujoco；Apache-2.0 & 场景与引擎版本 & 第 27 章动力学仿真 \\
+Gazebo & gazebosim；Apache-2.0 & 发行版/插件 commit & 第 27 章系统仿真 \\
+\bottomrule
+\end{longtable}
+
+最小复现记录还应包含操作系统、Python/CUDA/驱动、依赖锁文件、权重哈希、数据版本、随机种子、硬件接口、标定和实际运行状态。仓库地址只说明入口，不构成复现成功。

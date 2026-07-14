@@ -1,0 +1,91 @@
+\chapter{从 VLM 到 VLA：语义落地与动作接口}
+\label{chap:vlm-to-vla}
+
+\section{视觉语言预训练迁移了什么}
+
+图文预训练可迁移物体类别、属性、关系、开放词汇检索和语言组合先验。CLIP 的对比目标把配对图文拉近，使视觉特征能被自然语言查询\cite{radford2021clip}；PaLM-E 把连续传感表示注入语言模型，探索具身多模态推理\cite{driess2023palme}。这些能力可帮助理解“把红杯放到左侧托盘”，却不自动给出红杯六自由度姿态、机器人可达构型、抓取力和接触恢复。
+
+VLA 必须把语义条件落到动作分布：
+\begin{equation}
+p(a_{t:t+H}\mid I_{\le t},l,p_{\le t},h_{\le t},e),
+\label{eq:vla-conditional-action}
+\end{equation}
+其中 $I$ 是视觉、$l$ 是语言、$p$ 是本体状态、$h$ 是历史/触觉、$e$ 是本体与控制接口。遗漏 $e$ 会把“同一动作”误认为能跨机器人直接执行。
+
+\begin{figure}[H]
+\centering
+\setlength{\tabcolsep}{2pt}
+\begin{tabular}{c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c}
+\fbox{\begin{minipage}{0.12\textwidth}\centering 看懂\\目标\end{minipage}} &
+\fbox{\begin{minipage}{0.13\textwidth}\centering 定位/\\grounding\end{minipage}} &
+\fbox{\begin{minipage}{0.13\textwidth}\centering 判断\\可供性\end{minipage}} &
+\fbox{\begin{minipage}{0.14\textwidth}\centering 生成可执行\\动作\end{minipage}} &
+\fbox{\begin{minipage}{0.13\textwidth}\centering 观测并\\恢复\end{minipage}}
+\end{tabular}
+\caption{从语义到闭环动作的五个证据门。作者教学绘制；任一门失败都不能由“语义理解正确”替代。}
+\label{fig:semantic-to-action-gates}
+\end{figure}
+
+\section{grounding、可供性与本体状态}
+
+grounding 要把词语对应到图像区域、三维对象或持续跟踪 ID。检测框不足以抓取：还需姿态、遮挡、几何和不确定性。对象在图像中可见也不等于机器人可达；可供性取决于本体、夹爪、障碍和当前状态。
+
+SayCan 将语言模型给出的技能相关性与机器人价值/可供性结合，使语言上合理但机器人做不到的技能被降权\cite{ahn2022saycan}。抽象地可写为
+\begin{equation}
+s(k\mid l,s)=\log p_{\mathrm{LM}}(k\mid l)
++\lambda\log A(k\mid s,e),
+\label{eq:language-affordance-score}
+\end{equation}
+$k$ 为技能，$A$ 是在当前状态和本体上成功的可供性。若语言概率为 0.9、可供性为 0，组合仍必须禁止执行；给 $A$ 加数值下限时尤其要避免把不可行动作重新赋予非零机会。
+
+本体状态提供关节、末端、夹爪和控制模式。只看图像时，相同场景可能对应完全不同动作：机械臂正在向前运动还是静止、夹爪是否已闭合、上一动作是否被安全层截断，都决定下一步。状态还必须带单位、坐标系和时间戳。
+
+\section{动作头、低层控制与闭环缺口}
+
+VLA 可输出离散动作 token、连续末端增量、关节目标、动作块、技能调用或轨迹参数。接口越低层，训练数据越依赖具体本体和控制频率；接口越高层，越依赖可靠的技能库和规划器。没有“天然最统一”的动作空间。
+
+RT-1 展示了语言/视觉条件下的大规模真实机器人动作 token 学习\cite{brohan2022rt1}。但输出动作仍要经过单位还原、限幅、安全过滤和低层控制。接触任务还需力/触觉反馈和恢复状态机；模型生成“向下 2 cm”并不能证明下方无障碍或插孔已对齐。
+
+\begin{table}[H]
+\centering
+\caption{VLM 能力向 VLA 迁移时的证据缺口}
+\label{tab:vlm-vla-transfer-gap}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{0.19\textwidth}YY>{\raggedright\arraybackslash}p{0.28\textwidth}}
+\toprule
+已有能力 & 可迁移用途 & 仍缺信息 & 必要验证 \\
+\midrule
+开放词汇识别 & 找到语言目标候选 & 三维姿态、实例持续性 & 遮挡/同类实例 grounding \\
+关系与常识 & 任务分解、候选技能 & 本体可达、动态约束 & 当前状态的可供性 \\
+语言生成 & 解释或规划草案 & 动作单位与控制周期 & 编译到技能/动作接口 \\
+视觉问答 & 描述场景与异常 & 接触力、隐蔽几何 & 触觉/状态闭环 \\
+长序列建模 & 使用历史条件 & 状态新鲜度、错误记忆 & 延迟、恢复和回滚一致性 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{安全门与失败恢复}
+
+VLA 的动作提议应与执行分离。执行前检查状态新鲜度、坐标/单位、关节/速度边界、碰撞和任务权限；执行中监控接触、超时和偏差；执行后验证预期状态是否发生。验证失败要触发重观测、撤回或请求人工，而不是无条件进入下一个语言步骤。
+
+\begin{lstlisting}[caption={语义动作到可执行命令的安全门教学伪代码}]
+proposal = vla.predict(observation, instruction, embodiment)
+command = action_adapter.decode_units_frames(proposal)
+if stale(observation) or not affordance_model.feasible(command):
+    return reobserve_or_replan()
+if not collision_and_limit_check(command):
+    return safe_reject(reason="physical_constraint")
+result = low_level_controller.execute(command, monitors=contact_limits)
+if not verify_expected_state(result): recover_or_request_help()
+\end{lstlisting}
+
+安全过滤后的实际动作必须回写历史，否则模型以为自己的提议已执行，下一步条件错误。过滤频率高也说明策略与可行域不匹配，不能把安全层拦截当作部署成功。
+
+\section{与 VLA 系统综述的边界}
+
+本章只建立必要接口：语义先验、grounding、本体状态、动作表示和闭环验证。第 22 章建立统一分类，第 23 章比较代表性模型，第 24 章讨论数据/训练/泛化，第 25 章核验开源复现。这里不按模型逐一写架构和排行榜，避免同一论文在基础章与综述章重复介绍。
+
+\section{知识小结与综述判断}
+
+知识小结：VLM 可迁移开放词汇语义、关系和语言组合先验；VLA 还必须加入 grounding、本体状态、动作接口、物理约束和执行后验证。语言相关性与机器人可供性是不同信号。
+
+综述判断：从“看懂”到“做对”的缺口不是再加一个动作头即可填平，而是整条闭环接口。模型论文若只报告语义任务或离线动作准确率，不能证明具身能力；真机证据应说明实际执行动作、低层控制、安全拦截和失败恢复，否则无法判断能力来自模型还是外部系统。

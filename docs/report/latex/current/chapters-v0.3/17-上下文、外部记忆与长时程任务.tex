@@ -1,0 +1,92 @@
+\chapter{上下文、外部记忆与长时程任务}
+\label{chap:context-memory}
+
+\section{三种时间尺度需要三种状态}
+
+长时程任务不能把所有历史帧无限塞进上下文。高频物理状态服务控制，保留毫秒到秒；技能级事件记录“抓取失败、已重定位”，保留分钟；任务级状态记录目标、已完成步骤、资源与权限，可跨会话持久化。三者更新频率、可信度和写入权限不同。
+
+\begin{figure}[H]
+\centering
+\begin{tabular}{ccc}
+\fbox{\begin{minipage}{0.27\textwidth}\centering 高频状态\\位姿/速度/接触\\短窗、不可陈旧\end{minipage}} &
+\fbox{\begin{minipage}{0.27\textwidth}\centering 事件记忆\\技能结果/异常\\可检索、带证据\end{minipage}} &
+\fbox{\begin{minipage}{0.27\textwidth}\centering 任务状态\\目标/步骤/权限\\结构化、可持久化\end{minipage}}
+\end{tabular}
+\caption{长时程机器人记忆的三层结构。作者教学绘制；事件摘要不能覆盖实时状态，任务状态也不能由自由文本独占。}
+\label{fig:three-layer-robot-memory}
+\end{figure}
+
+纯长上下文把历史 token 留在模型窗口，保真但成本随长度增加；外部检索只取相关片段，扩展容量但可能漏召回或污染；结构化任务状态用 schema 保存关键变量，可验证但表达灵活性较低。工程系统通常组合三者。
+
+\section{历史压缩、事件摘要与检索}
+
+摘要把长轨迹压成短文本或 latent。压缩必须保留任务所需事实、来源和不确定性。只写“抓取失败”不够，应记录对象 ID、姿态、夹爪命令、接触/视觉证据、失败分类和恢复动作。摘要模型可能把“不确定”改写成确定陈述，因此应链接原始事件包。
+
+检索分数可组合语义、时间和任务过滤：
+\begin{equation}
+S(m_i,q,t)=\alpha\,\operatorname{sim}(e(m_i),e(q))
+-\beta(t-t_i)+\gamma\,\mathbf 1[\operatorname{task}(m_i)=\operatorname{task}(q)].
+\label{eq:memory-retrieval-score}
+\end{equation}
+时间衰减不应统一：安全禁令可能长期有效，瞬时位姿几百毫秒即过期。RAG 展示了参数模型结合外部检索的基本框架\cite{lewis2020rag}；机器人还需物理时间、坐标系和设备版本过滤。
+
+ReAct 把推理轨迹与外部动作/观察交错\cite{yao2023react}，为工具调用和事件写入提供了组织方式。但自由文本思考不应作为唯一控制状态；模型可改写或遗漏先前结论，且文本没有强类型约束。
+
+\section{结构化任务状态与恢复}
+
+任务状态可写成有限状态机、行为树 blackboard 或事件溯源记录。状态转移应由可验证事件触发：
+\begin{equation}
+z_{k+1}=\delta(z_k,e_k),\qquad
+e_k=(\text{type},\text{time},\text{evidence},\text{version}).
+\end{equation}
+若状态为 INSERTING，只有深度、力和视觉共同满足成功条件才转到 VERIFIED；单一语言模型判断不应覆盖硬传感条件。
+
+恢复必须区分“恢复软件上下文”和“恢复物理状态”。进程重启后数据库可能记得物体已抓取，但机器人实际因断电松爪。系统应重新观测关键不变量，再决定从哪个技能继续。任务状态需包含模型/地图/标定版本，回滚模型时同步检查记忆兼容性。
+
+\begin{lstlisting}[caption={带版本、来源与过期检查的记忆读写教学伪代码}]
+event = observe_skill_result(raw_sensors, controller_log)
+memory.append(event, source_links=raw_bundle,
+              map_version=map.id, calibration=calibration.id)
+task_state = transition(task_state, verified(event))
+
+candidates = memory.retrieve(query, task_id=task_state.task_id)
+usable = [m for m in candidates
+          if not expired(m) and compatible_versions(m, current_system)]
+context = compose(recent_physical_state(), usable, task_state)
+if critical_invariant_unknown(context): reobserve_before_acting()
+\end{lstlisting}
+
+\section{上下文预算与写入治理}
+
+上下文窗口应给当前观测、任务指令、检索历史和动作输出分别预算。若检索片段挤占当前图像 token，模型可能“记得过去却看不见现在”。可先保留不可压缩的当前状态和安全规则，再按得分选择事件，最后留出输出空间。
+
+外部记忆还需要写入权限。传感器事实、控制执行结果、操作者备注和模型推断应使用不同字段；推断不能覆盖事实。错误信息若被模型生成、写入、再次检索，会形成自我强化污染。关键事件应需要规则或人工确认。
+
+\begin{table}[H]
+\centering
+\caption{长上下文、检索记忆与结构化状态的职责比较}
+\label{tab:memory-strategy-comparison}
+\begin{tabularx}{\textwidth}{p{0.17\textwidth}YYYY}
+\toprule
+方式 & 优点 & 代价 & 典型风险 & 适用信息 \\
+\midrule
+纯长上下文 & 保留原始细节、实现直接 & 计算/内存随长度增长 & 位置稀释、窗口截断 & 最近对话、短轨迹 \\
+摘要上下文 & token 少、可读 & 压缩不可逆 & 幻觉、遗漏不确定性 & 技能结果概述 \\
+外部向量检索 & 容量大、按需读取 & 索引和检索链复杂 & 漏召回、污染、陈旧 & 历史案例、文档 \\
+结构化任务状态 & 强类型、可验证、易恢复 & schema 设计成本 & schema 不全、迁移失败 & 步骤、权限、不变量 \\
+事件溯源 & 可审计、可重放 & 日志量与重建成本 & 事件顺序/版本错误 & 控制与任务关键事件 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{错误记忆与长时程评测}
+
+评测应主动注入：过期位姿、错误对象 ID、矛盾摘要、缺失恢复事件、地图版本变化和检索无关片段。指标包括关键事实召回、错误记忆采纳率、恢复后状态一致性、上下文延迟和任务成功。只在干净历史上跑长任务，无法证明系统能抵抗记忆污染。
+
+语言模型可帮助解释和检索，但安全关键不变量应由结构化状态和传感证据维护。SayCan 等系统把高层语言规划与可执行技能结合\cite{ahn2022saycan}；长时程扩展仍需明确技能结果怎样写回、失败怎样影响后续候选。
+
+\section{知识小结与综述判断}
+
+知识小结：高频状态、事件记忆和任务状态对应不同时间尺度；长上下文保留细节，检索扩展容量，结构化状态提供可验证持久化。摘要、检索和状态转移都必须携带来源、时间与版本。
+
+综述判断：机器人记忆不是“更长 prompt”，而是状态治理。真正危险的不是忘记一段描述，而是把过期或推断性信息当成当前物理事实。长时程系统的证据应包括断点恢复、版本回滚和错误记忆注入测试，而不只展示一次成功的长链推理。

@@ -1,0 +1,135 @@
+\chapter{状态估计、传感器融合与 SLAM}
+\label{chap:state-estimation-slam}
+
+\section{学习目标、前置知识与问题设定}
+
+控制器读到的不是“真实状态”，而是由模型、传感器和时间戳共同生成的估计。读完本章，读者应能从贝叶斯递推推导卡尔曼预测与校正，解释 EKF、UKF、粒子滤波和因子图的假设差异，说明 SLAM 中位姿与地图为何耦合，并把时间同步、外参漂移与状态新鲜度写成可监控接口。
+
+离散状态空间模型写为
+\begin{equation}
+x_k=f(x_{k-1},u_{k-1})+w_{k-1},\qquad
+z_k=h(x_k)+v_k,
+\label{eq:nonlinear-state-observation}
+\end{equation}
+$x_k$ 可含位姿、速度、IMU 偏置和地图路标，$z_k$ 是相机、雷达、编码器或力觉观测；$w,v$ 分别是过程和观测噪声。式中下标也是时间语义：若 $z_k$ 实际对应旧时刻却按当前状态融合，正确的矩阵运算仍会得到错误估计。
+
+\begin{figure}[H]
+\centering
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{c@{\ $\longrightarrow$\ }c@{\ $\longrightarrow$\ }c@{\ $\longrightarrow$\ }c}
+\fbox{\begin{minipage}{0.17\textwidth}\centering 上一后验\\$\hat x^+,P^+$\end{minipage}} &
+\fbox{\begin{minipage}{0.15\textwidth}\centering 模型预测\\$f,Q$\end{minipage}} &
+\fbox{\begin{minipage}{0.17\textwidth}\centering 创新检验\\$r_k,S_k$\end{minipage}} &
+\fbox{\begin{minipage}{0.17\textwidth}\centering 当前后验\\$\hat x^+,P^+$\\附时间戳\end{minipage}}
+\end{tabular}
+\caption{递归状态估计的数据流。作者教学绘制；创新门控与时间戳检查是估计器接口的一部分，不是日志附属项。}
+\label{fig:state-estimation-loop}
+\end{figure}
+
+\section{线性高斯模型与卡尔曼滤波}
+
+对线性模型
+\begin{equation}
+x_k=F_{k-1}x_{k-1}+B_{k-1}u_{k-1}+w_{k-1},\quad
+z_k=H_kx_k+v_k,
+\end{equation}
+令 $w\sim\mathcal N(0,Q)$、$v\sim\mathcal N(0,R)$ 且相互独立。高斯分布经线性变换仍为高斯，因此预测为
+\begin{align}
+\hat x_{k|k-1}&=F_{k-1}\hat x_{k-1|k-1}+B_{k-1}u_{k-1},\\
+P_{k|k-1}&=F_{k-1}P_{k-1|k-1}F_{k-1}^\top+Q_{k-1}.
+\label{eq:kf-predict}
+\end{align}
+观测创新及其协方差为 $r_k=z_k-H_k\hat x_{k|k-1}$、$S_k=H_kP_{k|k-1}H_k^\top+R_k$。最小化更新后误差协方差可得\cite{kalman1960new}
+\begin{align}
+K_k&=P_{k|k-1}H_k^\top S_k^{-1},\\
+\hat x_{k|k}&=\hat x_{k|k-1}+K_kr_k,\\
+P_{k|k}&=(I-K_kH_k)P_{k|k-1}.
+\label{eq:kf-update}
+\end{align}
+$K_k$ 不是人工信任系数，而是先验不确定性与观测不确定性的矩阵权衡。数值实现宜使用线性求解代替显式 $S^{-1}$，并可用 Joseph 形式
+\begin{equation}
+P_{k|k}=(I-KH)P^-(I-KH)^\top+KRK^\top
+\end{equation}
+减轻有限精度造成的非对称或非正定。
+
+一维算例最能说明增益含义。先验位置为 $8\ \mathrm m$、方差 $P^-=4\ \mathrm{m^2}$；测量为 $9\ \mathrm m$、方差 $R=1\ \mathrm{m^2}$，且 $H=1$。则 $K=4/(4+1)=0.8$，后验 $\hat x^+=8+0.8(9-8)=8.8\ \mathrm m$，方差 $P^+=(1-0.8)4=0.8\ \mathrm{m^2}$。若把测量方差错写成 $0.01$，滤波器会几乎完全追随传感器；这不是“融合更灵敏”，而是噪声模型失配。
+
+可观测性决定观测序列能否区分内部状态。线性时不变系统的可观测矩阵
+\begin{equation}
+\mathcal O=\begin{bmatrix}H^\top&(HF)^\top&\cdots&(HF^{n-1})^\top\end{bmatrix}^\top
+\end{equation}
+须满列秩才能从有限序列重构全部状态。滤波器能输出一个数，不代表该状态可观；不可观方向的协方差若被错误压小，会形成危险的“自信漂移”。
+
+\section{非线性滤波：线性化、sigma 点与样本}
+
+EKF 在当前估计附近以雅可比 $F_k=\partial f/\partial x$、$H_k=\partial h/\partial x$ 线性化，再使用式~\eqref{eq:kf-predict}--\eqref{eq:kf-update}。它计算紧凑，但线性化点错误、姿态参数化不连续或强非线性会造成不一致。误差状态滤波把姿态等流形状态保留在名义值上，只在切空间估计小误差；第~\ref{chap:kinematics-lie}章的 $SO(3)/SE(3)$ 正是为此提供接口\cite{sola2017quaternion,barfoot2024state}。
+
+UKF 选取一组确定性 sigma 点，使其样本均值与协方差匹配当前高斯分布；每个点通过非线性 $f,h$ 后重新加权均值与协方差，从而避免显式雅可比\cite{julier2004ukf}。它并没有消除高斯假设，也不能自动处理多峰后验。粒子滤波则用带权样本近似后验，可表示多峰和强非线性，但维数升高时需要大量粒子，重采样还会造成样本贫化。
+
+\begin{table}[H]
+\centering
+\caption{递归估计与批量平滑方法的假设和失效}
+\label{tab:estimators-comparison}
+\begin{tabularx}{\textwidth}{p{0.14\textwidth}YYYY}
+\toprule
+方法 & 后验表示 & 非线性处理 & 主要优势 & 典型失效 \\
+\midrule
+KF & 单高斯 & 线性模型 & 闭式、快速、可解释 & 模型或噪声非线性/非高斯 \\
+EKF & 局部高斯 & 一阶雅可比 & 适合高频惯导融合 & 线性化不一致、雅可比错误 \\
+UKF & 单高斯 & sigma 点传播 & 无需显式雅可比 & 高维点数增加、仍是单峰 \\
+粒子滤波 & 带权样本 & 直接采样传播 & 可表示多峰 & 维数灾难、样本贫化 \\
+因子图平滑 & 轨迹联合分布 & 非线性最小二乘 & 可重线性化、用回环修正历史 & 内存/求解开销、错误数据关联 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+创新 $r_k$ 是最直接的在线诊断量。若模型正确，归一化创新平方 $r_k^\top S_k^{-1}r_k$ 应与观测维数对应的 $\chi^2$ 分布大致一致。长期偏大表示 $Q/R$ 太小、模型遗漏或观测异常；长期偏小可能表示协方差过于保守。门控只能拒绝离群值，不能修复持续偏置和错误外参。
+
+\section{从递归滤波到因子图与 SLAM}
+
+SLAM 同时估计机器人轨迹 $X=(x_0,\ldots,x_T)$ 与地图 $M$。里程计约束把相邻位姿连接，路标观测把位姿与地图点连接，回环约束把远隔时刻重新连接。定位依赖地图，地图又由带不确定性的位姿观测生成，因此二者不能作为独立黑盒串联\cite{durrantwhyte2006slam}。
+
+在独立高斯测量下，最大后验估计可写成非线性最小二乘
+\begin{equation}
+X^*=\arg\min_X\sum_i\|r_i(X_i)\|_{\Sigma_i^{-1}}^2,
+\label{eq:factor-graph-objective}
+\end{equation}
+每个因子只依赖少量变量，雅可比和正规方程因此稀疏。批量平滑会重新优化整个窗口；固定滞后平滑只保留最近状态；iSAM2 用 Bayes tree 对受新因子影响的部分增量重线性化和重求解\cite{kaess2012isam2}。相较只保留当前后验的滤波，平滑能让回环观测修正历史轨迹，但计算和内存代价更高。
+
+视觉 SLAM 的典型管线包括特征/直接跟踪、局部地图、关键帧优化、回环检测与全局图优化。ORB-SLAM2 用统一系统覆盖单目、双目和 RGB-D 相机，并公开了关键帧式实现\cite{murartal2017orbslam2}。这类系统的公开精度不能直接迁移到另一相机、镜头、曝光和运动模式：低纹理、重复纹理、运动模糊、动态物体和时间不同步都会改变数据关联质量。
+
+地图也不是单一对象。占据栅格回答哪里可通行，稠密几何回答表面形状，语义地图记录对象与区域，拓扑图记录地点连通。面向移动操作时，控制器通常需要带协方差和时间戳的局部位姿/速度，规划器需要碰撞几何，高层任务需要对象语义；强迫一个地图同时承担全部职责，会把更新频率、坐标系和不确定性混在一起。
+
+\section{时间同步、外参与状态新鲜度}
+
+设机器人以速度 $v$ 运动，传感器时间偏差为 $\Delta t$，则仅时间错位就产生约 $\|v\|\Delta t$ 的位置误差；旋转角速度 $\omega$ 产生约 $\|\omega\|\Delta t$ 的姿态误差。以 $v=1.5\ \mathrm{m/s}$、$\Delta t=80\ \mathrm{ms}$ 为例，位置错位为 $0.12\ \mathrm m$。若规划器的安全净空只有 $0.10\ \mathrm m$，再准确的几何地图也无法补偿这段时间误差。
+
+外参把传感器坐标系变到机体或世界系。相机支架松动造成的 $1^\circ$ 姿态漂移，在 $5\ \mathrm m$ 距离上对应约 $8.7\ \mathrm{cm}$ 的横向误差。若只调大观测噪声，滤波器可能表现得更平滑，却不会消除系统偏置。工程上应把时间偏差、外参和 IMU 偏置视为可标定/可估计状态，并监控它们的可观测条件。
+
+\begin{lstlisting}[caption={带时间戳、创新门控和新鲜度检查的融合教学伪代码}]
+for measurement in time_ordered_queue:
+    predict_to(measurement.stamp, imu_buffer)
+    residual, S = innovation(measurement)
+    if residual.T @ solve(S, residual) > chi2_gate:
+        reject(measurement); continue
+    update(measurement)
+    enforce_symmetric_positive_covariance()
+
+state, stamp = estimator.latest()
+if now() - stamp > control_freshness_limit:
+    controller.enter_safe_hold()
+\end{lstlisting}
+
+该伪代码刻意把“融合”和“向控制器发布”分开：估计器即使仍在运行，也可能因队列堵塞发布过期状态。除均值和协方差外，状态包至少应携带参考坐标系、测量时间、发布时间、外参版本、有效性标志和最近一次拒绝/重定位原因。
+
+\section{移动操作案例：误差如何沿系统栈传播}
+
+考虑移动底盘把机械臂送到货架前抓取。底盘定位使用轮速、IMU 和视觉，机械臂末端又依赖底盘到世界的变换。若视觉延迟导致底盘横向位姿偏差 $12\ \mathrm{cm}$，局部规划器可能仍在旧坐标系中认为通道有净空；机械臂到位后，末端相对货架的同量级偏差会触发第~\ref{chap:dynamics-contact-compliance}章的异常接触。此时提高阻抗控制器柔顺性只能降低冲击，不能恢复错误几何。
+
+可验证的回退链为：首先用创新统计和传感器心跳区分离群观测与数据中断；其次检查状态时间戳和外参版本；若协方差或新鲜度越界，停止进入狭窄区并退到已知安全位；只有在局部重定位或重新标定后，才让第~\ref{chap:planning-optimal-control}章的规划器基于新地图重算。日志需保留原始时间戳、接受/拒绝原因、状态协方差、规划版本和最终动作，否则无法判断失败源于估计、规划还是控制。
+
+\section{知识小结与综述判断}
+
+知识小结：状态估计是带模型和不确定性的时间递推。KF 对线性高斯模型给出闭式预测/校正；EKF 用局部雅可比，UKF 用 sigma 点，粒子滤波用样本；因子图把整段轨迹写成稀疏最小二乘，使回环能修正历史。SLAM 的地图、位姿、数据关联和坐标系是一体化估计问题。
+
+综述判断：具身系统最常见的估计风险不是“算法不够新”，而是时间、坐标系、偏置和协方差口径没有成为接口契约。后续的世界模型和长期记忆可以增加语义，但只要动作要落到真实身体，控制器仍需要一个带时间戳、参考系和可信度的物理状态；没有这些元数据，模型输出再丰富也无法形成可审计闭环。

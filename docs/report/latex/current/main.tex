@@ -1,6 +1,7 @@
 \documentclass[UTF8,a4paper,12pt,openany]{ctexbook}
 
 \input{metadata.tex}
+\newcommand{\ReportBibStyle}{gb7714-2015}
 \input{preamble.tex}
 
 \title{\ReportTitle-\ReportVersion}
@@ -14,17 +15,20 @@
 \tableofcontents
 
 \mainmatter
-\input{frontmatter/版本与使用说明.tex}
-\input{chapters/manifest.tex}
+\input{chapters-v0.3/manifest.tex}
+
+\appendix
+\input{appendices-v0.3/A-数学符号与公式索引.tex}
+\input{appendices-v0.3/B-术语与缩略语.tex}
+\input{appendices-v0.3/C-数据集与Benchmark索引.tex}
+\input{appendices-v0.3/D-开源代码仓库与复现环境.tex}
+\input{appendices-v0.3/E-图表来源改绘与授权记录.tex}
+\input{appendices-v0.3/F-企业证据字段与时间有效性.tex}
 
 \backmatter
-\begingroup
-\sloppy
-\nocite{*}
-\printbibliography
+\chapter{References}
+\begingroup\sloppy
+\printbibliography[heading=none]
 \endgroup
-\chapter*{构建说明}
-\addcontentsline{toc}{chapter}{构建说明}
-本版本正文由 \texttt{chapters/manifest.tex} 装配。该文件由迁移脚本根据当前章节文件生成；新增、删除或重命名章节后，应重新运行迁移脚本并重新执行完整质量检查。
 
 \end{document}

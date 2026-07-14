@@ -1,0 +1,107 @@
+\chapter{sim2real、域适应与训练闭环}
+\label{chap:sim2real-loop}
+
+\section{现实差距不是一个标量}
+
+sim2real 的目标不是让仿真“看起来像现实”，而是让在仿真分布上训练的系统在真实任务分布上保持可接受风险。差距至少包括观测渲染、传感噪声、动力学参数、接触、执行器、时延、任务对象和人类行为。不同差距需要不同工具：系统辨识缩小参数偏差，域随机化扩大训练覆盖，域适应对齐表示，残差学习补偿稳定模型误差，在线适应根据历史推断当前环境。
+
+本章只连接第~\ref{chap:imitation-preference}--\ref{chap:generative-action-policy}章形成训练与上线闭环，不重新解释其中算法。
+
+\begin{figure}[H]
+\centering
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c}
+\fbox{\begin{minipage}{0.16\textwidth}\centering 仿真/历史\\数据\end{minipage}} &
+\fbox{\begin{minipage}{0.16\textwidth}\centering 训练与\\压力测试\end{minipage}} &
+\fbox{\begin{minipage}{0.16\textwidth}\centering 影子/小流量\\真机\end{minipage}} &
+\fbox{\begin{minipage}{0.16\textwidth}\centering 失败分类\\与回采\end{minipage}}
+\end{tabular}
+\caption{从仿真训练到真机回采的版本闭环。作者教学绘制；每个箭头都必须保存数据、配置、模型和退出原因。}
+\label{fig:sim2real-release-loop}
+\end{figure}
+
+\section{系统辨识、域随机化与鲁棒目标}
+
+令仿真域参数为 $\xi$，包括质量、摩擦、时延、纹理等。域随机化训练
+\begin{equation}
+\min_\theta\;\mathbb E_{\xi\sim p_{\mathrm{train}}(\xi),\tau\sim\pi_\theta,P_\xi}
+[\mathcal L(\tau)].
+\label{eq:domain-randomization-risk}
+\end{equation}
+Tobin 等通过随机纹理、光照和相机参数研究从合成视觉到真实检测/抓取的迁移\cite{tobin2017domainrandomization}；动力学随机化则在质量、阻尼、摩擦等参数上训练控制策略\cite{peng2018dynamicsrandomization}。
+
+$p_{\mathrm{train}}$ 太窄，真实参数落在支持集外；太宽，策略可能为极端域牺牲正常性能，甚至找不到稳定行为。随机化范围应来自标定数据、制造公差和故障假设，并进行逐因素消融，而不是凭经验把所有参数乘上 $[0.5,1.5]$。
+
+系统辨识用真实输入输出估计 $\hat\xi$，再围绕它随机化。残差动力学写成
+\begin{equation}
+x_{t+1}=f_{\mathrm{sim}}(x_t,u_t;\hat\xi)+r_\psi(x_t,u_t),
+\label{eq:residual-dynamics}
+\end{equation}
+或在控制器输出上加受限残差。残差模型适合补偿可重复偏差，但数据外外推可能破坏稳定性；应限制幅值、频带和适用域，并保留解析基线。
+
+鲁棒训练还可关注最坏域或尾部风险，例如
+\begin{equation}
+\min_\theta\max_{q\in\mathcal Q}
+\mathbb E_{\xi\sim q}[\mathcal L(\pi_\theta;\xi)].
+\end{equation}
+它提高对指定不确定集的保护，不代表对未建模故障普遍安全。
+
+\section{域适应与在线适应}
+
+视觉域适应试图让仿真与真实观测的特征分布接近，可用风格变换、对抗对齐、自训练或少量真实标签微调。边缘分布对齐不保证任务条件分布对齐：若仿真中红色总对应目标、现实中颜色无关，特征看似对齐仍会保留错误捷径。
+
+在线适应从最近观测/动作历史推断环境潜变量 $z_t$，策略执行 $a_t=\pi(o_t,z_t)$。RMA 把基础策略与适应模块分开，在模拟随机域训练后用历史信号快速推断真实环境变化\cite{kumar2021rma}。这类方法要求适应信号在任务运动中可观；静止时无法辨识地面摩擦，短历史也可能混淆负载与执行器故障。
+
+\begin{table}[H]
+\centering
+\caption{现实差距、可观测证据与主要补救手段}
+\label{tab:sim2real-gap-matrix}
+\begin{tabularx}{\textwidth}{p{0.16\textwidth}YYYp{0.23\textwidth}}
+\toprule
+差距 & 可观测证据 & 主要手段 & 验证切片 & 常见误用 \\
+\midrule
+视觉/传感 & 像素、噪声谱、缺帧 & 渲染随机化、适应 & 光照、相机、遮挡 & 只追求逼真截图 \\
+刚体动力学 & 轨迹、力矩、加速度 & 辨识、参数随机化 & 负载、速度、姿态 & 参数范围无数据依据 \\
+接触/摩擦 & 力、滑移、插入结果 & 接触辨识、残差、真机数据 & 材料、磨损、公差 & 用视觉随机化替代接触建模 \\
+时延/控制栈 & 时间戳、队列、执行回执 & 延迟注入、预测、限速 & CPU 负载、网络抖动 & 只随机固定延迟 \\
+任务/人员 & 对象与操作序列 & 场景生成、真实回采 & 长尾物体、异常流程 & 仿真任务过于整洁 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{时延与接触：最容易被低估的差距}
+
+若机器人以 $1\ \mathrm{m/s}$ 运动，总感知--推理--通信时延为 $80\ \mathrm{ms}$，状态错位已达 $8\ \mathrm{cm}$。第~\ref{chap:state-estimation-slam}章说明时间戳错误如何污染估计；这里的训练要求是在仿真中注入与真实分布一致的抖动、丢包和计算超时，而不是只加一个固定延迟常数。
+
+接触差距更难由参数随机化覆盖。摩擦、柔顺、间隙和碰撞求解器的离散步长耦合。插装策略在仿真中成功，可能只是利用了允许穿透或过度光滑的接触模型。应把接触峰值、滑移、插入力、恢复次数和表面损伤纳入真机门，而不只看最终是否插入。
+
+\section{影子验证、灰度放行与失败回流}
+
+训练完成不等于可部署。建议的放行序列为：离线重放检查单位和接口；仿真压力测试覆盖参数尾部；hardware-in-the-loop 验证控制周期与协议；影子模式比较建议动作但不执行；受限工作空间低速小流量；逐步扩大任务分布。每一级必须定义进入条件、退出条件和自动回退版本。
+
+\begin{lstlisting}[caption={模型版本放行与失败回采的教学伪代码}]
+candidate = registry.load(version)
+assert offline_replay(candidate).passes(interface_and_regression_gates)
+assert sim_stress(candidate).passes(tail_risk_gates)
+shadow = run_shadow(candidate, production_inputs)
+if shadow.disagreement_or_latency > limits: reject(candidate)
+for scope in [low_speed_cell, guarded_tasks, limited_fleet]:
+    result = deploy(candidate, scope, rollback=stable_version)
+    if result.safety_event or result.metric_regression:
+        rollback(); collect_failure_bundle(result); break
+promote_only_if(all_gates_passed_and_reviewed)
+\end{lstlisting}
+
+失败包应包含原始传感、状态估计、模型输入输出、实际执行动作、安全过滤、控制回执、仿真参数、软件/模型版本和操作者说明。回采后先分类根因，再决定补真实示教、扩大随机化、更新辨识或修改安全层。把所有失败都追加为“困难样本”可能让模型学习互相矛盾的标签。
+
+\section{贯通第 9--12 章的闭环案例}
+
+以箱体抓取为例：第~\ref{chap:imitation-preference}章的示教建立基本接近与抓取数据；第~\ref{chap:reinforcement-learning}章可在仿真中优化长时域成功和能耗；第~\ref{chap:representation-transfer}章共享不同物体的视觉表示；第~\ref{chap:generative-action-policy}章生成多峰动作块。sim2real 阶段不再重新发明这些算法，而是逐项核验观测分布、动作单位、动力学、接触、时延与安全接口。
+
+若真机在透明物体上失败，先检查感知与数据覆盖；若到达但夹取滑落，检查接触与夹爪模型；若离线动作正确但在线抖动，检查推理/控制时延和执行窗口；若特定负载失败，检查参数支持与适应可观测性。不同根因对应不同回流，避免用无方向的“继续训练”掩盖工程问题。
+
+\section{知识小结与综述判断}
+
+知识小结：系统辨识缩小模型偏差，域随机化扩大参数覆盖，域适应对齐观测表示，残差与在线适应补偿剩余变化。现实差距必须按观测、动力学、接触、时延和任务分别建模，并通过影子、灰度和回滚形成版本闭环。
+
+综述判断：sim2real 不是某个训练技巧，而是一套证据链。随机化只有在范围有测量依据、真实域位于支持集且策略在尾部仍可控时才成立；“零样本上真机”也不意味着零真实信息，因为标定、任务设计和参数范围本身都来自现实。可信报告应公开这些现实信息怎样进入训练与放行。

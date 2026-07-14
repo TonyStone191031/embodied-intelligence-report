@@ -1,0 +1,111 @@
+\chapter{硬件、ROS 2、实时系统与云边端部署}
+\label{chap:hardware-ros2-deployment}
+
+\section{部署不是把模型复制到机器人上}
+
+机器人部署的输入不是一个模型文件，而是一组同时受物理和时间约束的工作负载：伺服控制要在硬截止期内读状态、计算并写命令；状态估计要保持时间一致；视觉和 VLA 推理可以较慢，却必须处理过期观测；日志、训练和舰队分析可以放到云端，但网络断开时机器人仍要进入确定的安全状态。因而选型应从任务频率、最坏时延、数据率、功耗和失效后果反推本体、执行器、传感器、计算与通信。
+
+设第 $i$ 条链路包含采样、排队、传输、计算和执行延迟，则
+\begin{equation}
+L_i^{\mathrm{e2e}}=L_i^{\mathrm{sense}}+L_i^{\mathrm{queue}}+
+L_i^{\mathrm{net}}+L_i^{\mathrm{compute}}+L_i^{\mathrm{act}},
+\qquad
+M_i=T_i-L_{i,p99}^{\mathrm{e2e}},
+\label{eq:deployment-latency-budget}
+\end{equation}
+其中 $T_i$ 是周期或截止期，$M_i$ 是用 $p99$ 端到端时延估算的裕量。平均推理时间不能替代 $M_i$：一次排队尖峰就可能让高速关节多运动数厘米。硬实时回路还要以最坏执行时间和调度分析验证，$p99$ 只适合工程监测，不构成形式保证。
+
+\begin{table}[H]
+\begingroup
+\hbadness=10000
+\centering
+\caption{按时间尺度拆分部署职责，而不是为整机指定一个“算力”数字}
+\label{tab:deployment-timescales}
+\begin{tabularx}{\textwidth}{p{0.16\textwidth}p{0.15\textwidth}YYY}
+\toprule
+职责 & 典型尺度 & 首要约束 & 合适位置 & 必留证据 \\
+\midrule
+驱动/伺服 & 亚毫秒至数毫秒 & 抖动、急停、总线 & MCU/实时 CPU & 周期直方图、超期计数 \\
+状态估计 & 数毫秒至数十毫秒 & 时间戳、同步、丢帧 & 板载 CPU/GPU & 延迟分解、创新量 \\
+视觉与动作策略 & 数十至数百毫秒 & 显存、吞吐、观测新鲜度 & 板载加速器 & p50/p95/p99、功耗 \\
+任务规划/记忆 & 百毫秒至秒 & 语义正确性、可取消 & 板载或边缘 & 超时、回退、工具日志 \\
+训练与舰队分析 & 分钟至天 & 数据治理、成本、版本 & 数据中心/云 & 数据和模型 manifest \\
+\bottomrule
+\end{tabularx}
+\endgroup
+\end{table}
+
+\section{硬件链：力、带宽、热与能量要同时闭合}
+
+本体负载、减速器峰值扭矩、连续扭矩、关节速度和制动方式决定动作包络；编码器、相机、深度、IMU 和力矩传感器决定可观测性；板载计算又受到电池、散热和机械空间约束。峰值 TOPS 不能说明模型能否持续运行，因为热降频、内存带宽、预处理、数据搬运和并发控制都会改变有效吞吐。
+
+一个可审计的功耗预算应满足
+\begin{equation}
+P_{\mathrm{avg}}=P_{\mathrm{act}}+P_{\mathrm{compute}}+P_{\mathrm{sense}}+
+P_{\mathrm{comm}}+P_{\mathrm{aux}},\qquad
+t_{\mathrm{mission}}\leq \frac{\eta E_{\mathrm{battery}}}{P_{\mathrm{avg}}},
+\label{eq:power-mission-budget}
+\end{equation}
+其中 $\eta$ 汇总电池可用深度、变换损耗和安全余量。算例：可用能量为 $1.2\,\mathrm{kWh}$、平均功耗 $400\,\mathrm{W}$、$\eta=0.8$ 时，上界仅约 $2.4\,\mathrm{h}$；若只报告待机功耗，就会系统性高估班次覆盖。峰值制动和再生能量还要单独校核，不能由平均式推出。
+
+\section{ROS 2 把数据面、控制面和硬件接口显式化}
+
+ROS 2 的 topic、service 和 action 分别适合流式数据、短事务与可反馈/可取消的长操作。QoS 不是“网络调优开关”，而是通信契约：可靠性、队列深度、截止期、寿命和活性策略要按消息语义设定，发布者与订阅者策略不兼容时甚至无法通信\cite{ros2jazzyqos}。相机预览可以允许 best effort，安全状态心跳则需要明确 deadline 与 liveliness 监测；二者套用同一 profile 通常都不理想。
+
+\texttt{ros2\_control} 用 Controller Manager 连接控制器与硬件抽象，Resource Manager 管理 System、Sensor、Actuator 及其状态/命令接口；主循环按 read--update--write 执行\cite{ros2control2026}。这建立了清晰责任边界，但不会自动提供确定性：驱动阻塞、动态分配、日志 I/O、锁竞争和非实时回调都可能破坏周期。
+
+\begin{figure}[H]
+\centering
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{c@{\ $\leftrightarrow$\ }c@{\ $\leftrightarrow$\ }c@{\ $\leftrightarrow$\ }c}
+\fbox{\begin{minipage}{0.17\textwidth}\centering 云端训练\\版本仓库\end{minipage}} &
+\fbox{\begin{minipage}{0.17\textwidth}\centering 边缘规划\\VLA/视觉\end{minipage}} &
+\fbox{\begin{minipage}{0.18\textwidth}\centering 实时控制\\状态估计\end{minipage}} &
+\fbox{\begin{minipage}{0.17\textwidth}\centering 驱动、传感\\安全 I/O\end{minipage}}
+\end{tabular}
+\vspace{0.7em}
+
+\begin{tabular}{c@{\quad}c@{\quad}c}
+\fbox{签名模型/回滚} & \fbox{超时则取消/降级} & \fbox{越界则安全停机}
+\end{tabular}
+\caption{云边端不是按“智能程度”分层，而是按截止期、失效后果和断网自治分配职责。}
+\label{fig:cloud-edge-device-profile}
+\end{figure}
+
+managed node 通过 configure、activate、deactivate、cleanup 和 shutdown 把资源准备与业务运行分开，适合相机、雷达和电机驱动的有序启停\cite{ros2jazzylifecycle}。生命周期状态机仍需系统编排器：某个节点进入 active 不代表标定有效、依赖已就绪或安全互锁闭合。
+
+\begin{lstlisting}[caption={依据 ros2\_control 官方字段写成的教学配置；频率必须由实测和安全分析确定}]
+controller_manager:
+  ros__parameters:
+    update_rate: 1000
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+    arm_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+arm_controller:
+  ros__parameters:
+    joints: [j1, j2, j3, j4, j5, j6]
+    command_interfaces: [position]
+    state_interfaces: [position, velocity]
+    state_publish_rate: 100.0
+    action_monitor_rate: 20.0
+\end{lstlisting}
+
+配置中的 $1000\,\mathrm{Hz}$ 只是请求周期。验收必须记录真实 read/update/write 分解、超期次数、CPU 隔离、调度策略和总线状态；若控制器在桌面负载下达标、录包或推理并发时超期，部署仍不合格。
+
+\section{时间同步与数据新鲜度是跨层接口}
+
+不同传感器硬件时钟可写成 $t=\alpha_i t_i+\beta_i+\epsilon_i$。第 26 章讨论数据集对齐；在线系统还要传播采样时刻、接收时刻和估计不确定度。只在消息到达时盖主机时间，会把网络抖动误当作物体运动。控制器应拒绝超过新鲜度阈值的状态，融合器应监测时钟漂移，日志应保存同步源和校准版本。
+
+实时线程应避免无界阻塞、缺页、动态内存和不可控锁；非实时 ROS 回调通过有界缓冲区向实时循环交换最新值。实时不是把所有模块塞入高优先级线程，而是把少量必须守期的路径隔离，并让其失败模式可测。
+
+\section{云边端更新必须带回退条件}
+
+云端适合训练、离线评测和舰队聚合；板载端必须拥有断网后的感知、制动、状态监督和最低任务回退。模型发布包至少包含权重哈希、代码/算子版本、输入输出 schema、标定兼容范围、硬件目标、已通过测试集和回滚版本。灰度上线按机器人、场景和时间窗限制暴露，不能只做随机用户 A/B 测试，因为物理风险与场景分布不均匀。
+
+更新流程应为：签名验证 $\rightarrow$ 离线兼容检查 $\rightarrow$ 影子运行 $\rightarrow$ 有界任务灰度 $\rightarrow$ 指标与安全事件门控 $\rightarrow$ 扩大部署；任何阶段出现 schema 不兼容、时延超限、安全过滤激增或未知失败，回滚到最后已知良好版本。SROS2 可用 DDS-Security 的证书、keystore 和 enclave 提供身份、权限与加密机制\cite{ros2security2026}，但密钥轮换、最小权限、供应链签名和失陷恢复仍需产品流程承担。
+
+\section{知识小结与综述判断}
+
+部署剖面把每条任务链的截止期、时延分解、功耗、硬件接口、通信 QoS、生命周期和回退版本写成可测试契约。ROS 2 与 \texttt{ros2\_control} 提供接口和运行时骨架，却不会自动产生实时性或安全性。综述判断是：模型大小、TOPS 和平均 FPS 都是局部指标；只有端到端 $p99$/最坏时延、热稳态、超期计数、断网行为和版本回滚共同闭合，才说明系统具备部署条件。

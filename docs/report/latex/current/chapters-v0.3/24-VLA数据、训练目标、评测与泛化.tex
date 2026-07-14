@@ -1,0 +1,103 @@
+\chapter[VLA 数据、训练目标、评测与泛化]{VLA 数据、训练目标、\\评测与泛化}
+\label{chap:vla-data-evaluation}
+
+\section{多机器人数据的难点是语义对齐，不是文件拼接}
+
+Open X-Embodiment 把多机构机器人数据组织为标准格式，并用 RT-X 探索跨机器人正迁移\cite{openx2024}。标准 schema 解决“字段放在哪里”，却不自动解决动作语义：末端增量的参考坐标、夹爪正负方向、控制周期、相机命名和成功标签仍可能不同。每个 episode 至少需要机器人 ID、任务语言、观测/动作 schema 版本、坐标约定、标定、时间戳、终止原因和来源许可证。
+
+设数据集 $D_i$ 有 $N_i$ 个 episode，训练采样权重为 $w_i$，则模型实际优化的是
+\begin{equation}
+\mathcal L=\sum_i w_i\,\mathbb E_{\tau\sim D_i}
+\left[\sum_t m_{i,t}\ell_\theta(\tau_t)\right],\qquad \sum_iw_i=1,
+\label{eq:vla-mixture-loss}
+\end{equation}
+其中 $m_{i,t}$ 是有效动作维/时间掩码。若令 $w_i=N_i/\sum_jN_j$，最大数据源会主导；若数据集等权，小型噪声集会被过采样。Octo 的多数据集训练\cite{octo2024}和 OpenVLA 的大规模真实示范训练\cite{kim2024openvla}都必须连同混合权重与规范化解释。
+
+\begin{table}[H]
+\centering
+\caption{跨机器人数据混合的对齐检查}
+\label{tab:vla-data-alignment}
+\begin{tabularx}{\textwidth}{p{0.16\textwidth}YYYY}
+\toprule
+字段 & 必须记录 & 可统一内容 & 不应强行统一 & 错配后果 \\
+\midrule
+动作 & 坐标、单位、频率、维数 & 通用目标 schema & 关节拓扑与执行器限制 & 方向反转、尺度失控 \\
+图像 & 相机 ID、时间、内外参 & 张量布局、颜色空间 & 视角与遮挡分布 & 错把相机差异当任务差异 \\
+语言 & 原文、重写来源、任务 ID & tokenizer 接口 & 粒度与歧义 & 重复措辞支配任务采样 \\
+终止 & 成功/失败/截断原因 & 枚举字段 & 场景特定判据 & 截断被误作成功或负例 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{归一化是模型接口的一部分}
+
+对动作维 $j$，常用分位数归一化
+\begin{equation}
+\tilde a_j=2\frac{\operatorname{clip}(a_j,q_j^- ,q_j^+)-q_j^-}
+{q_j^+-q_j^-}-1.
+\end{equation}
+$q_j^\pm$ 必须与机器人、动作 schema 和训练版本绑定。若部署时使用另一数据集统计量，张量形状仍正确，却会系统改变速度或位移。离散 token 又在归一化之后分箱，因此错误会被合法 token 掩盖。第 23 章的 OpenVLA 源码导读展示了这一边界。
+
+\section{目标函数：共享主干不代表监督等价}
+
+动作行为克隆可与语言生成、图文对比、价值或成功预测联合：
+\begin{equation}
+\mathcal L_{\mathrm{total}}=\lambda_a\mathcal L_{\mathrm{act}}
++\lambda_l\mathcal L_{\mathrm{lang}}+\lambda_v\mathcal L_{\mathrm{vision}}
++\lambda_s\mathcal L_{\mathrm{success}}.
+\end{equation}
+辅助目标能保留语义或改善表征，但也可能占用容量并与精细控制冲突。RT-2 通过视觉语言与机器人数据共训练研究知识迁移\cite{brohan2023rt2}；这类结论应由动作任务消融支持，而不能从 VLM 指标直接外推。
+
+后训练还包括目标域微调、低秩适配、失败数据回放和偏好/价值校正。比较时必须标明：基础模型是否相同、目标域示范数、哪些层更新、是否使用评测环境数据、是否按最佳 checkpoint 选择。否则“少样本适配”可能隐含大量预训练覆盖或测试集调参。
+
+\section{把“泛化”拆成四个正交问题}
+
+任务泛化是新指令/技能组合；对象泛化是新实例或类别；场景泛化是背景、布局、光照和干扰变化；本体泛化是新机器人几何、传感器与动作接口。四者可同时变化，但证据强度不同。若新对象出现在相同桌面、相同相机且动作相同，只能支持对象轴结论；不能写成“开放世界泛化”。
+
+\begin{table}[H]
+\centering
+\caption{VLA 评测证据的可比性边界}
+\label{tab:vla-evidence-comparability}
+\begin{tabularx}{\textwidth}{p{0.17\textwidth}YYYY}
+\toprule
+证据 & 可回答问题 & 必报条件 & 不能单独回答 & 常见误用 \\
+\midrule
+离线动作指标 & 数据拟合、量化/时延诊断 & 划分、掩码、归一化 & 闭环成功、安全 & 用 MSE 排名多峰策略 \\
+仿真 & 大样本闭环比较 & 版本、种子、物理/视觉设置 & 真机可靠性 & 忽略 simulator gap \\
+真机成功率 & 指定协议下任务结果 & 次数、初态、失败判据 & 广泛泛化 & 小样本百分比当稳定结论 \\
+恢复/安全 & 扰动后的系统韧性 & 扰动、介入、风险定义 & 单模型能力 & 把安全层功劳归给 VLA \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{成功率必须带不确定性}
+
+若 $n$ 次试验成功 $k$ 次，点估计 $\hat p=k/n$。Wilson 区间为
+\begin{equation}
+\frac{\hat p+z^2/(2n)\pm z\sqrt{\hat p(1-\hat p)/n+z^2/(4n^2)}}
+{1+z^2/n}.
+\label{eq:wilson-success}
+\end{equation}
+例如 10 次成功 8 次并不等价于大样本下稳定的 80\%。论文若只给平均百分比、不报告试验次数、跨种子/任务方差和人工介入，就不能支持微小模型差异。
+
+\begin{lstlisting}[caption={可复核真机评测协议的最小记录循环}]
+for trial in preregistered_trials:
+    reset_to_recorded_initial_state(trial.reset_id)
+    start = capture_state_and_versions()
+    result = run_with_fixed_timeout(policy, trial.instruction)
+    outcome = independent_success_check(result, trial.success_rule)
+    write_record(trial_id=trial.id, outcome=outcome,
+                 intervention=result.human_interventions,
+                 recovery=result.recovery_events,
+                 safety=result.constraint_events,
+                 model_hash=MODEL_HASH, start_state=start)
+report_counts_and_confidence_intervals(group_by=["task", "generalization_axis"])
+\end{lstlisting}
+
+\section{怎样核查 SOTA 声明}
+
+逐项检查任务是否相同、初态难度是否相同、是否允许重试/人工介入、控制频率和硬件是否相同、基线是否使用相同目标域数据、模型选择是否接触测试集。只要任一项不同，应写“在各自协议下报告”，而不是排序。第 23 章中的模型数字因此只支持论文指定设置的设计判断。
+
+\section{知识小结与综述判断}
+
+VLA 证据链从 schema 和动作语义开始，经采样权重、归一化、训练目标与后训练，最后落到分轴泛化和带置信区间的闭环评测。综述判断是：模型规模或平均成功率都不是独立证据；只有数据暴露、适配预算、试验协议与失败处理同时可比时，性能排序才有意义。

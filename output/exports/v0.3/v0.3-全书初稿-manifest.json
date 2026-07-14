@@ -1,0 +1,43 @@
+{
+  "version": "v0.3",
+  "status": "initial-draft",
+  "source": "current",
+  "built_at": "2026-07-14",
+  "entry": "docs/report/latex/current/main.tex",
+  "output": "output/exports/v0.3/v0.3-全书初稿.pdf",
+  "sha256": "F62AF48A833E2D9CD2770AFB184BEBD1F36EA67AD5637C0D1A9C904B83CC88D7",
+  "bytes": 2917536,
+  "pages": 193,
+  "chapters": 38,
+  "appendices": 6,
+  "cited_keys": 124,
+  "figures": 44,
+  "tables": 47,
+  "code_listings": 32,
+  "display_math_environments": 121,
+  "toolchain": {
+    "engine": "XeTeX 3.141592653-2.6-0.999996 (MiKTeX 24.4)",
+    "biber": "2.20",
+    "bibliography_style": "GB/T 7714-2015 numeric",
+    "pipeline": "xelatex -no-pdf -> biber -> xelatex -no-pdf x2 -> xdvipdfmx"
+  },
+  "quality": {
+    "undefined_citations_or_references": 0,
+    "duplicate_labels": 0,
+    "overfull_hbox": 0,
+    "underfull_hbox": 0,
+    "pdf_raw_latex_markers": 0,
+    "pdf_local_path_markers": 0,
+    "naked_href_in_chapters": 0,
+    "nocite_commands": 0,
+    "duplicate_long_paragraph_groups": 0,
+    "visual_sample": "passed: cover, TOC, Chapter 6 formulas/code/figure, Chapter 23 OpenVLA and Octo original figures, appendices, References"
+  },
+  "freeze_gaps": {
+    "target_pages": "300-360",
+    "current_pages": 193,
+    "target_cited_sources": "approximately 200 or more, subject to claim coverage",
+    "current_cited_sources": 124,
+    "note": "This manifest records the complete initial draft, not a frozen v0.3 release. Expansion must add derivations, experiments, source-backed figures and implementation evidence rather than filler."
+  }
+}

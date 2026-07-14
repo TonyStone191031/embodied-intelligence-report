@@ -1,0 +1,94 @@
+\chapter{模仿学习、DAgger 与偏好学习}
+\label{chap:imitation-preference}
+
+\section{问题设定：学习动作，还是学习目标}
+
+示教数据通常写为 $\mathcal D_E=\{(o_t,a_t^E)\}$。行为克隆直接学习 $\pi_\theta(a\mid o)$；逆强化学习和偏好学习则先从轨迹比较中恢复奖励或效用，再由规划或强化学习求策略。二者回答不同问题：前者问“专家在这个观测下做了什么”，后者问“哪些结果更符合人的意图”。本章只讨论示教与偏好数据如何形成监督信号；MDP 与策略优化留给第~\ref{chap:reinforcement-learning}章，生成式动作分布留给第~\ref{chap:generative-action-policy}章。
+
+\begin{figure}[H]
+\centering
+\begin{tabular}{c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c}
+\fbox{专家/接管} & \fbox{轨迹与偏好} & \fbox{策略或奖励模型} & \fbox{影子评估与回流}
+\end{tabular}
+\caption{示教学习的闭环。作者教学绘制；关键不是一次性收集“干净数据”，而是明确哪些状态由当前策略访问、哪些失败需要重新标注。}
+\label{fig:imitation-data-loop}
+\end{figure}
+
+\section{行为克隆与协变量偏移}
+
+离散动作的行为克隆最小化负对数似然
+\begin{equation}
+\mathcal L_{\mathrm{BC}}(\theta)
+=-\frac1N\sum_{i=1}^{N}\log\pi_\theta(a_i^E\mid o_i),
+\label{eq:bc-nll}
+\end{equation}
+连续确定性动作常用 $\|a_i^E-\mu_\theta(o_i)\|_2^2$。这相当于假设给定观测只有一个条件均值；当“从杯子左侧绕过”和“从右侧绕过”都正确时，均方误差可能预测两条路线的平均值，恰好撞向杯子。第~\ref{chap:generative-action-policy}章将用动作块与生成模型处理这种多峰性。
+
+更根本的问题是训练状态来自专家分布 $d_{\pi_E}$，部署状态来自学习策略自己的分布 $d_{\pi_\theta}$。一次小误差会把机器人带到示教中未出现的状态，后续预测因此更差。若把每一步独立失误率粗略写成 $\epsilon$，长度为 $T$ 的执行至少一次失误概率为 $1-(1-\epsilon)^T$。取 $\epsilon=0.02,T=50$，该概率约为 $63.6\%$；这不是严格的 DAgger 理论界，但直观说明逐帧准确率不能代替长时域成功率。
+
+行为克隆仍是强基线：数据充足、闭环稳定、任务短且训练与部署分布接近时，它避免在线试错并易于调试。合格实验应同时报告轨迹级成功、恢复成功、接管次数、失败状态覆盖和动作延迟，而不只报告验证集 MSE。
+
+\section{DAgger：在策略访问的状态上重新提问}
+
+DAgger 迭代执行当前策略，收集其访问状态，并请求专家对这些状态给出动作，然后聚合到训练集\cite{ross2011dagger}。第 $i$ 轮可写为
+\begin{equation}
+\pi_i=\operatorname{Train}(\mathcal D_i),\qquad
+\mathcal D_{i+1}=\mathcal D_i\cup
+\{(o,a^E(o)):o\sim d_{\tilde\pi_i}\},
+\end{equation}
+其中 $\tilde\pi_i$ 可按概率混合专家与学习策略。它修正的不是模型容量，而是监督数据与部署状态分布的错位。
+
+\begin{lstlisting}[caption={带安全接管和聚合预算的 DAgger 教学伪代码}]
+dataset = expert_demonstrations
+for round in range(max_rounds):
+    policy = train_bc(dataset)
+    for episode in shadow_or_guarded_rollouts(policy):
+        for observation in episode:
+            if supervisor.unsafe(observation):
+                expert_action = supervisor.take_over(observation)
+                dataset.add(observation, expert_action,
+                            reason="safety_intervention")
+    stop_if(validation_success_stable and intervention_rate_low)
+\end{lstlisting}
+
+真机 DAgger 的代价常被低估。专家必须在偏离状态下给出有意义动作；人机切换有延迟；“专家动作”可能依赖操作者看得到、策略看不到的信息；主动探索还可能损坏设备。因此工程实现常采用影子模式、仿真扰动、人工回放标注或只在安全域内聚合，而不是无条件让未成熟策略自由运行。
+
+\section{逆强化学习与偏好学习}
+
+逆强化学习假设专家行为近似优化某个未知奖励 $r_\phi(s,a)$。经典学徒学习通过匹配专家与策略的特征期望寻找奖励和策略\cite{abbeel2004apprenticeship}。奖励并不唯一：对所有轨迹加常数，甚至作势函数变换，都可能保持最优策略不变。因而恢复到的是与行为等价的一类目标，而不是专家脑中的“真实动机”。
+
+偏好学习让标注者比较两段轨迹 $\tau^A,\tau^B$。若段得分为 $R_\phi(\tau)=\sum_t r_\phi(s_t,a_t)$，Bradley--Terry 模型给出
+\begin{equation}
+P_\phi(\tau^A\succ\tau^B)
+=\frac{\exp R_\phi(\tau^A)}{\exp R_\phi(\tau^A)+\exp R_\phi(\tau^B)}.
+\label{eq:preference-probability}
+\end{equation}
+对人类标签做交叉熵即可训练奖励模型，再用它优化策略。Christiano 等展示了从少量轨迹片段比较学习复杂目标的路径\cite{christiano2017preferences}。但奖励模型会被策略主动寻找漏洞；标注者间分歧、比较顺序、视频视角和未显示的安全信息都会进入标签噪声。
+
+\begin{table}[H]
+\centering
+\caption{示教与偏好路线的监督对象和主要风险}
+\label{tab:imitation-preference-comparison}
+\begin{tabularx}{\textwidth}{p{0.15\textwidth}YYYY}
+\toprule
+方法 & 监督信号 & 是否需在线访问 & 优点 & 典型失效 \\
+\midrule
+行为克隆 & 状态--动作对 & 否 & 简单、稳定、可离线训练 & 协变量偏移、多峰平均 \\
+DAgger & 当前策略状态上的专家动作 & 是/受控 & 直接覆盖恢复状态 & 标注昂贵、接管延迟 \\
+逆强化学习 & 专家轨迹 & 常需反复求策略 & 可迁移目标表述 & 奖励不可辨识、计算昂贵 \\
+偏好奖励 & 轨迹片段成对排序 & 可离线或主动查询 & 不要求逐帧动作 & 标注分歧、奖励黑客 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{示教策略上线：从数据到失败回流}
+
+一个可审计流程包含五个门。第一，采集时保存原始观测、动作、操作者、设备标定、时间戳和任务结果；第二，按场景和操作者划分训练/验证集，避免相邻帧泄漏；第三，影子评估只记录策略建议，不驱动执行器；第四，在低速、限空间和人工接管下灰度；第五，把失败按感知、动作、时延、接触和任务定义分类后回流。只把成功轨迹追加到数据集，会系统性删除恢复行为。
+
+上线指标应区分离线拟合与闭环结果。动作误差可发现单位或坐标问题，轨迹成功率衡量任务完成，接管率反映安全负担，失败恢复率衡量是否能离开分布外状态。任何指标都要按任务难度、物体和环境切片；总体平均数可能掩盖某个高风险子域完全失败。
+
+\section{知识小结与综述判断}
+
+知识小结：行为克隆在专家分布上做监督学习；DAgger 把监督查询移到当前策略访问的状态；逆强化学习和偏好学习把人类行为转成奖励或效用。四者的关键差异是标注对象、数据分布和是否允许在线访问，而不是网络骨干。
+
+综述判断：机器人示教系统的上限常由数据协议而非损失函数决定。若观测不含专家决策所需信息、失败状态从不标注、接管延迟不记录，再复杂的策略也只能拟合一个不可部署的数据集。评价应把知识讲解与上线证据分开：先说明算法在什么假设下成立，再报告真实闭环是否满足这些假设。

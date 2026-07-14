@@ -1,0 +1,155 @@
+\chapter{数学与计算预备知识}
+\label{chap:math-computation}
+
+\section{学习目标、前置知识与问题边界}
+
+本章只讲后续机器人章节会反复调用的计算工具。读者应能在读完后完成四件事：判断一个矩阵问题是否病态；把传感噪声传播为状态不确定性；把估计问题写成概率或最小二乘目标；识别约束优化的可行性、最优性与数值收敛是三件不同的事。前置知识是微积分、向量运算和 Python。$SO(3)$、$SE(3)$ 在第~\ref{chap:kinematics-lie} 章主讲，贝叶斯滤波在第 8 章主讲，本章只建立它们共同使用的符号和数值约定。
+
+机器人程序很少因“不知道矩阵乘法”而失败，更常见的失败是坐标、量纲、随机性与数值条件混在一起。例如，相机外参误差进入抓取位姿后会沿运动链传播；雅可比接近奇异时，毫米级末端修正可能对应极大的关节速度；优化器返回“收敛”也只说明停止条件满足，不保证任务约束真实可行。图~\ref{fig:math-compute-chain} 把本章工具放进一条共同链路。
+
+\begin{figure}[H]
+\centering
+\small
+\fbox{\parbox{0.17\textwidth}{\centering 状态与参数\\$x,\theta$}}
+$\longrightarrow$
+\fbox{\parbox{0.18\textwidth}{\centering 传感与噪声\\$z=h(x)+v$}}
+$\longrightarrow$
+\fbox{\parbox{0.18\textwidth}{\centering 线性化与传播\\$J\Sigma J^\top$}}
+$\longrightarrow$
+\fbox{\parbox{0.18\textwidth}{\centering 目标与约束\\$\min f,\ c=0$}}
+$\longrightarrow$
+\fbox{\parbox{0.13\textwidth}{\centering 动作\\$u$}}
+\caption{机器人计算中的变量、噪声、局部模型与优化接口。作者教学示意；箭头表示计算依赖，不表示固定的软件模块。}
+\label{fig:math-compute-chain}
+\end{figure}
+
+\section{向量、矩阵与数值敏感性}
+
+设 $x\in\mathbb{R}^{n}$、$A\in\mathbb{R}^{m\times n}$。内积 $x^\top y$ 衡量同一坐标基下的方向一致性；二范数 $\lVert x\rVert_2=\sqrt{x^\top x}$ 衡量欧氏长度；加权范数
+\begin{equation}
+\lVert x\rVert_W^2=x^\top W x,\qquad W\succ0
+\label{eq:weighted-norm}
+\end{equation}
+把不同方向的单位与可信度写入同一标量。若 $x$ 是位置与角度拼成的误差向量，直接使用单位阵意味着把 $1$ m 与 $1$ rad 当作同等代价；这不是“中性选择”，而是一个隐含权重决定。
+
+线性方程 $Ax=b$ 的数学解写作 $x=A^{-1}b$，实现时通常应调用分解后的线性求解，而不是显式构造 $A^{-1}$。NumPy 的官方线性代数接口也把 `solve`、奇异值分解和条件数作为不同任务提供；病态矩阵即使没有触发奇异异常，结果仍可能因浮点误差而失真\cite{harris2020numpy,numpy_linalg_docs}。二范数条件数为
+\begin{equation}
+\kappa_2(A)=\lVert A\rVert_2\lVert A^{-1}\rVert_2
+=\frac{\sigma_{\max}(A)}{\sigma_{\min}(A)}.
+\label{eq:condition-number}
+\end{equation}
+这里 $\sigma_{\max}$、$\sigma_{\min}$ 是最大和最小奇异值。$\kappa$ 不是误差本身，而是相对输入扰动可能被放大的上界尺度；$\sigma_{\min}\to0$ 时，某个输入方向几乎无法从输出中分辨。
+
+取
+\[
+A=\begin{bmatrix}1&1\\1&1.0001\end{bmatrix},\quad
+b=\begin{bmatrix}2\\2.0001\end{bmatrix}.
+\]
+精确解为 $x=[1,1]^\top$，但 $A$ 的两列几乎共线，$\kappa_2(A)\approx4.0\times10^4$。若第二个观测仅改变 $10^{-4}$ 的量级，解的分量就可能出现数量级更大的相对变化。后续第 5 章的雅可比奇异、第 8 章的不可观测方向，本质上都会再次出现这种“小奇异值对应弱信息方向”的结构。
+
+\begin{table}[H]
+\centering
+\caption{常见矩阵问题的诊断量、失败信号与处理方向}
+\label{tab:linear-algebra-failures}
+\small
+\begin{tabularx}{\textwidth}{p{0.19\textwidth}p{0.19\textwidth}p{0.25\textwidth}Y}
+\toprule
+问题 & 先看什么 & 失败信号 & 处理方向\\
+\midrule
+$Ax=b$ & 条件数、残差 & 解随微小输入剧烈变化 & 缩放变量、分解求解、正则化\\
+最小二乘 & 奇异值谱、秩 & 参数不可辨、协方差巨大 & 删除冗余参数或加入可信先验\\
+协方差矩阵 & 对称性、特征值 & 出现负方差或非正定 & 检查线性化、数值对称化与模型\\
+梯度/Hessian & 梯度范数、曲率 & 振荡、停在鞍点、步长崩溃 & 线搜索、信赖域、重新参数化\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{概率、贝叶斯更新与不确定性传播}
+
+机器人状态不是“真值加一个误差条”，而是基于观测和模型形成的条件分布。贝叶斯公式
+\begin{equation}
+p(x\mid z)=\frac{p(z\mid x)p(x)}{p(z)}
+\label{eq:bayes-rule}
+\end{equation}
+把先验 $p(x)$ 与似然 $p(z\mid x)$ 组合为后验。分母只负责归一化；进行最大后验估计时，可最小化负对数而不显式计算它。若先验与观测噪声均为高斯，负对数后验变成加权平方残差，这就是滤波、束调整和许多轨迹优化目标共享的数学骨架\cite{barfoot2024state}。
+
+设 $x\sim\mathcal{N}(\mu_x,\Sigma_x)$，输出为 $y=f(x)$。在 $\mu_x$ 附近一阶展开
+\begin{equation}
+f(x)\approx f(\mu_x)+J_f(x-\mu_x),\qquad
+J_f=\left.\frac{\partial f}{\partial x}\right|_{\mu_x},
+\end{equation}
+可得
+\begin{equation}
+\mu_y\approx f(\mu_x),\qquad
+\Sigma_y\approx J_f\Sigma_xJ_f^\top.
+\label{eq:first-order-covariance}
+\end{equation}
+$J_f\in\mathbb{R}^{p\times n}$ 把 $n$ 维输入扰动映射到 $p$ 维输出扰动。式~\eqref{eq:first-order-covariance} 是局部近似：非线性强、分布多峰或角度跨越分支切换时，均值和协方差不足以描述真实输出。
+
+最小算例取 $y=x_1+2x_2$、$\Sigma_x=\operatorname{diag}(0.01,0.04)$。此时 $J_f=[1,2]$，所以
+\[
+\sigma_y^2=[1,2]\begin{bmatrix}0.01&0\\0&0.04\end{bmatrix}[1,2]^\top=0.17,
+\quad \sigma_y\approx0.412.
+\]
+$x_2$ 的系数为 2，方差贡献因此乘以 $2^2$ 而不是 2。工程上常见的“把标准差直接相加”会在这里给出错误结果。
+
+\section{最大似然、最大后验与非线性最小二乘}
+
+给定观测 $z_i=h_i(x)+v_i$，且 $v_i\sim\mathcal{N}(0,R_i)$，最大似然估计等价于
+\begin{equation}
+\hat{x}_{\mathrm{ML}}=arg\min_x\frac{1}{2}\sum_i
+r_i(x)^\top R_i^{-1}r_i(x),\qquad r_i(x)=z_i-h_i(x).
+\label{eq:nonlinear-least-squares}
+\end{equation}
+$R_i^{-1}$ 是信息矩阵：噪声方差越大，观测权重越小。若增加高斯先验 $x\sim\mathcal{N}(\bar{x},P)$，目标中再加入 $\frac12\lVert x-\bar{x}\rVert_{P^{-1}}^2$，得到最大后验估计。所谓“融合多个传感器”不是把数值平均，而是在共同状态与坐标约定下组合各自的残差模型和不确定性。
+
+非线性最小二乘在当前估计 $x_k$ 处写 $r(x_k+\Delta x)\approx r_k+J_k\Delta x$。Gauss--Newton 步满足
+\begin{equation}
+(J_k^\top WJ_k)\Delta x=-J_k^\top Wr_k.
+\label{eq:gauss-newton}
+\end{equation}
+前式的输出 $J_k$ 和 $r_k$ 成为后式的线性系统。若 $J_k^\top WJ_k$ 病态，更新会不稳定；Levenberg--Marquardt 通过加入 $\lambda I$ 抑制弱方向，但会牺牲局部收敛速度。优化教材通常把线搜索、信赖域与约束条件分开处理，因为“目标下降”“局部模型可信”和“约束可行”不能由同一个停止标志代替\cite{nocedal2006numerical}。
+
+\section{梯度、约束与拉格朗日乘子}
+
+考虑等式约束问题
+\begin{equation}
+\min_x f(x)\quad\text{s.t.}\quad c(x)=0.
+\label{eq:equality-constrained-problem}
+\end{equation}
+拉格朗日函数 $\mathcal{L}(x,\lambda)=f(x)+\lambda^\top c(x)$。在满足约束正则性的局部最优点，一阶必要条件为
+\begin{equation}
+\nabla_x f(x^*)+J_c(x^*)^\top\lambda^*=0,
+\qquad c(x^*)=0.
+\label{eq:kkt-equality}
+\end{equation}
+第一式表示目标梯度在可行切空间上不能继续下降；$\lambda$ 可解释为约束收紧一单位时的局部代价敏感度。它不是一个“惩罚系数调参”：乘子由最优性条件共同求解，而惩罚法中的权重由设计者选择。
+
+以 $\min_{x,y}x^2+y^2$ 且 $x+y=1$ 为例，$\mathcal{L}=x^2+y^2+\lambda(x+y-1)$。由 $2x+\lambda=0$、$2y+\lambda=0$ 得 $x=y$，再代入约束得到 $x=y=0.5$、$\lambda=-1$。若约束改为非凸集合，式~\eqref{eq:kkt-equality} 通常只提供局部必要条件；初始化、可行域拓扑和求解器容差仍决定实际结果。
+
+\section{NumPy 可复算例与实现约定}
+
+下面代码把本章三个计算动作放在同一处：不用显式逆求解线性方程；用奇异值计算条件数；用雅可比传播协方差。它是可运行的教学代码，不是 NumPy 源码片段；API 行为依据 NumPy 官方文档，数组计算模型依据 NumPy 论文\cite{harris2020numpy,numpy_linalg_docs}。
+
+\begin{lstlisting}[language=Python,caption={条件数、线性求解与一阶协方差传播的 NumPy 教学代码},label={lst:ch04-numpy}]
+import numpy as np
+
+A = np.array([[1.0, 1.0], [1.0, 1.0001]])
+b = np.array([2.0, 2.0001])
+s = np.linalg.svd(A, compute_uv=False)
+kappa = s.max() / s.min()
+x = np.linalg.solve(A, b)
+
+Sigma_x = np.diag([0.01, 0.04])
+J = np.array([[1.0, 2.0]])
+Sigma_y = J @ Sigma_x @ J.T
+print(kappa, x, Sigma_y.item())
+\end{lstlisting}
+
+实现中还应统一四项约定。第一，向量默认列向量，批量维度写在最前或最后必须全书一致；第二，位置用 m、角度用 rad、时间用 s，日志不得省略单位；第三，协方差必须注明对应误差坐标；第四，任何 `solve`、SVD 或优化调用都记录残差、迭代次数与终止原因。没有这些元数据，数值结果无法用于失败诊断。
+
+\section{工程失效与知识小结}
+
+本章工具的共同限制是局部性。条件数描述局部线性敏感性，不告诉系统如何重新规划；一阶协方差传播不能忠实表示遮挡造成的多峰假设；Gauss--Newton 可能在错误数据关联下稳定收敛到错误答案；KKT 条件也不保证非凸问题的全局最优。工程程序应把“求解器成功”“残差足够小”“约束可行”“状态在业务边界内”分别检查。
+
+\authorjudgement{机器人数学不是为了增加符号密度，而是为了把接口假设显式化。后续章节若出现逆矩阵、协方差、梯度或约束，却没有说明坐标、量纲、条件数与停止条件，就不能把该结果视为可部署证据。}

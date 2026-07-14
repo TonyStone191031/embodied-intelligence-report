@@ -1,0 +1,73 @@
+\chapter{制造与物流：结构化高价值任务}
+\label{chap:manufacturing-logistics-cases}
+
+\section{案例要落到任务单元，而不是行业名称}
+
+制造和物流更容易形成机器人交付，不是因为任务天然简单，而是因为对象、工位、流量、人员区域和失败处置可以被工程化。一个任务单元至少包含来料与初态、感知与标定、动作与工具、质量判定、异常分流、安全边界和上下游节拍。只展示一次抓取或行走，无法说明系统是否能进入生产。
+
+单位合格产出可写为
+\begin{equation}
+Q=\frac{N_{\mathrm{good}}}{H_{\mathrm{scheduled}}},\qquad
+I_h=\frac{T_{\mathrm{human\ intervention}}}{N_{\mathrm{good}}},
+\label{eq:case-throughput-intervention}
+\end{equation}
+其中 $Q$ 把失败、复位和停机计入排程时间，$I_h$ 把人工介入归一化到每件合格品。只报告机器人运动时间会遗漏上料、质检、异常清除和等待上游的成本。
+
+\section{案例一：双臂椅装配揭示“结构化”仍需完整闭环}
+
+Suárez-Ruiz 等使用商用双臂、平行夹爪、3D 相机和腕部力传感器完成 IKEA 椅装配\cite{suarezruiz2018ikea}。系统把零件定位、抓取、双臂协调、插入和力觉终止连接起来，说明结构已知、零件有限的任务也需要视觉与接触共同闭环。
+
+\begin{figure}[H]
+\centering
+\begin{tabular}{c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c}
+\fbox{零件检测/位姿} & \fbox{抓取与交接} & \fbox{力控插入/固定} & \fbox{质量判定/回退}
+\end{tabular}
+\caption{装配任务单元。任何一步失败都要有可观测判据和退出路径。}
+\label{fig:assembly-workcell-case}
+\end{figure}
+
+该工作的重要边界同样清楚：装配顺序由工程师预先给定，零件和工位受控；论文证明研究原型在指定任务上的系统集成，不提供跨班次 OEE、换型时间、维护工时或认证证据。它适合作为“可变零件装配”的技术基线，不应写成通用装配已经解决。
+
+从交付角度，泛化的价值不是让机器人理解任意家具说明书，而是减少新型号的夹具、视觉模板和轨迹重写。这个收益必须与新增验证成本比较：若模型能生成新动作，但每次换型仍需逐项安全确认和长时间调试，经济价值可能低于专用工装。
+
+\section{案例二：仓内物流靠任务分解与规模运维}
+
+Amazon 将仓内机器人分成库存搬运、单件抓取、包裹分拣和开放区域移动等任务。其 2023 年官方材料称 Sparrow 已在指定站点处理订单，Proteus 与 Cardinal 在出库码头组合测试\cite{amazon2023robots}；2025 年官方材料又称机器人部署量达到一百万，并称 DeepFleet 使机器人行程效率改善 10\%\cite{amazon2025millionrobots}。这些数字是运营方自报事实，不是独立审计结果。
+
+\begin{figure}[H]
+\centering
+\small
+\begin{tabular}{c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c@{\ $\rightarrow$\ }c}
+\fbox{订单释放} & \fbox{搬运与排队} & \fbox{抓取与分拣} & \fbox{异常恢复}
+\end{tabular}
+\caption{仓内物流的系统闭环。机器人数量不是产能，流量和异常处理才决定吞吐。}
+\label{fig:warehouse-flow-case}
+\end{figure}
+
+规模化的核心资产包括地图和交通规则、任务调度、充电、备件、软件发布、现场诊断和人员培训。单机策略只占其中一段。开放地面 AMR 要处理人与车混行，抓取系统要处理长尾包装、透明/反光物体、破损和拥挤；失败若统一送往人工异常站，系统仍可能有效，但 $I_h$ 必须进入成本模型。
+
+\begin{table}[H]
+\begingroup\hbadness=10000
+\centering
+\caption{两个案例的证据职责不可互换}
+\label{tab:manufacturing-logistics-evidence}
+\begin{tabularx}{\textwidth}{p{0.18\textwidth}YYYY}
+\toprule
+案例 & 已证明 & 未证明 & 人工角色 & 下一层证据 \\
+\midrule
+IKEA 椅装配 & 指定零件/序列下双臂视觉力控闭环 & 产线节拍、换型、长期可靠性 & 设计任务、准备工位 & 多型号、跨班次、完整故障统计 \\
+Amazon 仓内机器人 & 企业公开声称大规模部署与指定流程使用 & 独立效率因果、介入和事故分母 & 上料、异常、维护、监督 & 站点分层数据、暴露量、审计 \\
+\bottomrule
+\end{tabularx}
+\endgroup
+\end{table}
+
+\section{结构化场景为何更易交付}
+
+高价值结构化任务可通过工装、照明、包装、缓冲区和异常站降低环境熵；过程质量有可测阈值；产量足以摊销集成与维护。基础模型最现实的贡献是覆盖传统规则的长尾、降低换型工程量、改善异常分类和人机接口，而不是删除全部结构。
+
+验收应同时报告合格产出、首次成功、恢复后成功、人工分钟、停机、能耗、损伤、安全事件和版本。若新模型提高抓取率却增加推理时延，使上游阻塞或下游饥饿，局部指标改善并未转化为系统收益。
+
+\section{知识小结与案例判断}
+
+装配原型显示视觉、双臂协调、接触控制和任务序列必须闭合；仓内案例显示规模能力主要来自任务分解、流量控制和运维系统。案例判断是：结构化不是智能含量低，而是把不可控变化转化为可验证接口。模型泛化只有减少换型、异常和人工介入的总成本时，才形成交付价值。
